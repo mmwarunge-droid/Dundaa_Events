@@ -16,14 +16,13 @@ def get_recommendations(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Return the strongest recommended events for the current user.
+    Return recommended events.
 
-    Since event latitude/longitude have been removed, recommendations are now
-    based on:
-    - event date priority
-    - ratings
-    - general ranking score
+    Ranking uses:
+    - rating
+    - event popularity
     """
+
     events = db.query(Event).options(
         joinedload(Event.ratings),
         joinedload(Event.comments)
@@ -32,6 +31,7 @@ def get_recommendations(
     scored = []
 
     for event in events:
+
         score, distance = ranking_score(
             event,
             None,
@@ -43,8 +43,9 @@ def get_recommendations(
             **EventResponse.model_validate(event).model_dump(),
             "average_rating": average_rating(event),
             "ranking_score": score,
-            "distance_km": distance,
+            "distance_km": distance
         })
 
     scored.sort(key=lambda x: -x["ranking_score"])
+
     return scored[:10]

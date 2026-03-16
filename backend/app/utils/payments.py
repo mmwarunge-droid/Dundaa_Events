@@ -1,26 +1,51 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
 from uuid import uuid4
 
 
-def calculate_gift_split(amount: float) -> dict:
-    """Apply the Dundaa financial rules to a gift amount.
-
-    Rule used here:
-    - 20% tax/platform fee first
-    - 10% platform commission on the remaining amount
-    - balance goes to influencer
+def generate_reference(prefix: str) -> str:
     """
-    tax_fee = round(amount * 0.20, 2)
-    net_after_tax = amount - tax_fee
-    platform_fee = round(net_after_tax * 0.10, 2)
-    influencer_amount = round(net_after_tax - platform_fee, 2)
-    return {
-        "gross_amount": amount,
-        "tax_fee_amount": tax_fee,
-        "platform_fee_amount": platform_fee,
-        "influencer_amount": influencer_amount,
-    }
+    Generate a short transaction or payout reference.
+
+    Example:
+    CASH-20260316-AB12CD34
+    """
+    date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
+    random_part = uuid4().hex[:8].upper()
+    clean_prefix = (prefix or "TX").strip().upper()
+
+    return f"{clean_prefix}-{date_part}-{random_part}"
 
 
-def generate_reference(prefix: str = "TX") -> str:
-    """Generate a short human-readable transaction reference."""
-    return f"{prefix}-{uuid4().hex[:12].upper()}"
+def calculate_platform_fee(amount: float) -> float:
+    """
+    Platform fee helper.
+
+    Current baseline:
+    - 5% platform fee
+    """
+    amount = max(float(amount), 0.0)
+    return round(amount * 0.05, 2)
+
+
+def calculate_tax_fee(amount: float) -> float:
+    """
+    Tax placeholder helper.
+
+    Current baseline:
+    - 0% until tax rules are finalized
+    """
+    amount = max(float(amount), 0.0)
+    return round(amount * 0.0, 2)
+
+
+def calculate_influencer_net_amount(amount: float) -> float:
+    """
+    Net amount after fees.
+    """
+    gross = max(float(amount), 0.0)
+    platform_fee = calculate_platform_fee(gross)
+    tax_fee = calculate_tax_fee(gross)
+
+    return round(gross - platform_fee - tax_fee, 2)

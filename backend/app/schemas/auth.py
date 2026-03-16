@@ -1,16 +1,22 @@
-from pydantic import BaseModel, EmailStr
+from datetime import date
+
+from pydantic import BaseModel, EmailStr, Field
 
 
 class SignupRequest(BaseModel):
     """
     Incoming request body for new user registration.
-    - email must be a valid email address
-    - username is the public login/display name
-    - password is stored only after hashing
+
+    Added:
+    - date_of_birth for age verification
+    - optional gender
     """
     email: EmailStr
-    username: str
-    password: str
+    username: str = Field(..., min_length=2, max_length=50)
+    password: str = Field(..., min_length=6)
+
+    date_of_birth: date
+    gender: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -18,11 +24,10 @@ class LoginRequest(BaseModel):
     Incoming request body for login.
 
     identifier:
-    - can be either the user's email or username
-    - this gives users flexibility at sign-in
+    - email or username
 
     Optional location fields:
-    - stored during login so Dundaa can recommend nearby events
+    - used to update profile context at login
     """
     identifier: str
     password: str
@@ -31,10 +36,27 @@ class LoginRequest(BaseModel):
     location_name: str | None = None
 
 
+class ReactivateRequest(BaseModel):
+    """
+    Used when a deactivated user chooses to reactivate their account.
+    """
+    identifier: str
+    password: str
+
+
 class TokenResponse(BaseModel):
     """
-    JWT response returned after signup or login.
-    The frontend stores access_token and uses it for authenticated requests.
+    JWT response returned after signup, login, or reactivation.
     """
     access_token: str
     token_type: str = "bearer"
+
+
+class AuthStatusResponse(BaseModel):
+    """
+    Useful lightweight auth-flow response for lifecycle checks.
+    """
+    message: str
+    account_status: str
+    can_reactivate: bool = False
+    name: str | None = None

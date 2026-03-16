@@ -1,9 +1,12 @@
-from pydantic import BaseModel
 from datetime import datetime
+
+from pydantic import BaseModel
 
 
 class TransactionResponse(BaseModel):
-    """Read-only transaction payload."""
+    """
+    Read-only transaction payload returned to clients.
+    """
     id: int
     tx_type: str
     provider: str

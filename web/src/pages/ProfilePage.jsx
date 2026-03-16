@@ -1,31 +1,26 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 
 /*
 ProfilePage
 -----------
-Two-mode profile UI.
+Expanded profile management page.
 
-MODE 1: VIEW
-Shows:
-- profile picture
-- username
-- gender
-- organizer contact info
+This version adds:
+- editable gender
+- notification preference visibility
+- temporary account deactivation
+- permanent account deletion
 
-Button:
-Edit your profile
-
-MODE 2: EDIT
-Allows editing:
-- username
-- profile photo (with drag + zoom crop)
-- organizer contact info
-
-Save button persists changes then returns to VIEW mode.
-
-Latitude / longitude remain backend-only.
+Developer note:
+Deletion currently calls a hard-delete backend route.
+In production, you may later add:
+- password confirmation
+- 2-step confirmation
+- soft-delete/anonymization policy
 */
 
 const API_BASE_URL =
@@ -38,7 +33,8 @@ function resolveImage(url) {
 }
 
 export default function ProfilePage() {
-  const { user, setUser } = useAuth();
+  const navigate = useNavigate();
+  const { user, setUser, logout } = useAuth();
 
   const fileInputRef = useRef(null);
   const imageRef = useRef(null);
@@ -58,6 +54,7 @@ export default function ProfilePage() {
   const [dragging, setDragging] = useState(false);
 
   const [saving, setSaving] = useState(false);
+  const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -69,8 +66,6 @@ export default function ProfilePage() {
   }, [user]);
 
   const profileImage = previewUrl || resolveImage(user?.profile_picture);
-
-  /* ---------- IMAGE SELECTION ---------- */
 
   const choosePhoto = () => {
     fileInputRef.current?.click();
@@ -93,8 +88,6 @@ export default function ProfilePage() {
     setZoom(1);
     setDragOffset({ x: 0, y: 0 });
   };
-
-  /* ---------- DRAG HANDLING ---------- */
 
   const startDrag = (e) => {
     e.preventDefault();
@@ -127,11 +120,8 @@ export default function ProfilePage() {
     };
   });
 
-  /* ---------- CROP IMAGE ---------- */
-
   const buildCroppedImage = async () => {
     const img = imageRef.current;
-
     const canvas = document.createElement("canvas");
 
     const size = 600;
@@ -139,7 +129,6 @@ export default function ProfilePage() {
     canvas.height = size;
 
     const ctx = canvas.getContext("2d");
-
     const scaled = size * zoom;
 
     const dx = dragOffset.x - (scaled - size) / 2;
@@ -152,8 +141,6 @@ export default function ProfilePage() {
     );
   };
 
-  /* ---------- SAVE PROFILE ---------- */
-
   const saveProfile = async () => {
     setSaving(true);
     setError("");
@@ -161,7 +148,6 @@ export default function ProfilePage() {
     try {
       let newPhotoPath = user?.profile_picture;
 
-      // If user selected a new photo, crop it and upload first.
       if (selectedFile) {
         const blob = await buildCroppedImage();
 
@@ -179,9 +165,9 @@ export default function ProfilePage() {
         newPhotoPath = photoRes.data.profile_picture;
       }
 
-      // Save editable profile fields.
       const profileRes = await api.put("/profile", {
         username,
+        gender: gender || null,
         contact_info: contactInfo
       });
 
@@ -197,20 +183,70 @@ export default function ProfilePage() {
       console.error(err);
       setError(
         err?.response?.data?.detail ||
-        "Failed to save profile."
+          "Failed to save profile."
       );
     } finally {
       setSaving(false);
     }
   };
 
-  /* ---------- VIEW MODE ---------- */
+  const handleDeactivate = async () => {
+    const confirmed = window.confirm(
+      "Deactivate your account? Your data will be kept, but your account will become inactive until you reactivate it."
+    );
+
+    if (!confirmed) return;
+
+    setBusyAction("deactivate");
+    setError("");
+
+    try {
+      await api.post("/profile/deactivate");
+      logout();
+      navigate("/login");
+    } catch (err) {
+      console.error("Deactivation failed:", err);
+      setError(
+        err?.response?.data?.detail ||
+          "Failed to deactivate account."
+      );
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    const confirmed = window.confirm(
+      "Delete your account permanently? This will remove your account and related data. This cannot be undone."
+    );
+
+    if (!confirmed) return;
+
+    setBusyAction("delete");
+    setError("");
+
+    try {
+      await api.delete("/profile/account");
+      logout();
+      navigate("/signup");
+    } catch (err) {
+      console.error("Deletion failed:", err);
+      setError(
+        err?.response?.data?.detail ||
+          "Failed to delete account."
+      );
+    } finally {
+      setBusyAction("");
+    }
+  };
 
   if (!editMode) {
     return (
       <div className="container">
-        <div className="card" style={{ padding: 30, maxWidth: 760, margin: "0 auto" }}>
+        <div className="card" style={{ padding: 30, maxWidth: 820, margin: "0 auto" }}>
           <h2>Your Profile</h2>
+
+          {error && <p style={{ color: "tomato" }}>{error}</p>}
 
           <div style={{ display: "flex", gap: 30, alignItems: "center", flexWrap: "wrap" }}>
             <div className="profile-avatar-frame">
@@ -232,25 +268,56 @@ export default function ProfilePage() {
                 Gender: {user?.gender || "Not specified"}
               </p>
 
+              <p style={{ color: "var(--muted)", marginBottom: 8 }}>
+                Notifications:{" "}
+                <strong>
+                  {user?.notification_consent === null
+                    ? "Not decided"
+                    : user?.notification_consent
+                    ? "Consented"
+                    : "Declined"}
+                </strong>
+              </p>
+
               <p style={{ color: "var(--muted)", marginTop: 0 }}>
                 <strong>Organizer contact:</strong>{" "}
                 {user?.contact_info || "No contact details added yet"}
               </p>
 
-              <button
-                className="btn"
-                onClick={() => setEditMode(true)}
-              >
-                Edit your profile
-              </button>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 18 }}>
+                <button
+                  className="btn"
+                  onClick={() => setEditMode(true)}
+                >
+                  Edit your profile
+                </button>
+
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleDeactivate}
+                  disabled={busyAction === "deactivate"}
+                >
+                  {busyAction === "deactivate"
+                    ? "Deactivating..."
+                    : "Deactivate account"}
+                </button>
+
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleDeleteAccount}
+                  disabled={busyAction === "delete"}
+                >
+                  {busyAction === "delete"
+                    ? "Deleting..."
+                    : "Delete account"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
     );
   }
-
-  /* ---------- EDIT MODE ---------- */
 
   return (
     <div className="container">
@@ -315,6 +382,18 @@ export default function ProfilePage() {
             onChange={(e) => setUsername(e.target.value)}
           />
 
+          <select
+            className="select"
+            value={gender}
+            onChange={(e) => setGender(e.target.value)}
+          >
+            <option value="">Select gender</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="prefer_not_to_say">Prefer not to say</option>
+            <option value="other">Other</option>
+          </select>
+
           <textarea
             className="textarea"
             placeholder="Organizer contact details e.g. Call/WhatsApp: +2547XXXXXXXX"
@@ -323,11 +402,7 @@ export default function ProfilePage() {
             maxLength={280}
           />
 
-          <p style={{ color: "var(--muted)" }}>
-            Gender: {gender}
-          </p>
-
-          <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <button
               className="btn"
               onClick={saveProfile}

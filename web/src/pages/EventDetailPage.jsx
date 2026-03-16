@@ -1,20 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+
 import api from "../api/client";
-import { useAuth } from "../context/AuthContext";
-import RatingStars from "../components/RatingStars";
 import CommentList from "../components/CommentList";
+import RatingStars from "../components/RatingStars";
+import { useAuth } from "../context/AuthContext";
 
 /*
 EventDetailPage
 ---------------
-Displays one event in full detail.
-
-Includes:
-- poster rendering
-- event owner quick management controls
-- ratings / comments
-- organizer contact details pulled from event owner profile
+Phase 2 additions:
+- event approval/ticketing state is visible
+- Buy Tickets button appears only when the event is ticketed and approved/live
+- owners can still see rejection reasons on their own events
 */
 
 const CATEGORY_OPTIONS = [
@@ -27,7 +25,7 @@ const CATEGORY_OPTIONS = [
   "Hobbies"
 ];
 
-const PAYMENT_METHOD_OPTIONS = ["MoMo", "Bank", "Card"];
+const PAYMENT_METHOD_OPTIONS = ["MoMo", "Bank", "Card", "M-Pesa"];
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
@@ -43,6 +41,8 @@ export default function EventDetailPage() {
   const { user } = useAuth();
 
   const [event, setEvent] = useState(null);
+  const [loading, setLoading] = useState(true);
+
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
 
@@ -58,7 +58,8 @@ export default function EventDetailPage() {
     event_date: "",
     price: "",
     payment_method: "",
-    payment_link: ""
+    payment_link: "",
+    has_ticket_sales: false
   });
 
   const [error, setError] = useState("");
@@ -66,6 +67,9 @@ export default function EventDetailPage() {
 
   const fetchEvent = async () => {
     try {
+      setLoading(true);
+      setError("");
+
       const res = await api.get(`/events/${id}`);
       setEvent(res.data);
 
@@ -79,24 +83,50 @@ export default function EventDetailPage() {
         event_date: res.data.event_date || "",
         price: res.data.price ?? "",
         payment_method: res.data.payment_method || "",
-        payment_link: res.data.payment_link || ""
+        payment_link: res.data.payment_link || "",
+        has_ticket_sales: Boolean(res.data.has_ticket_sales)
       });
     } catch (err) {
       console.error("Failed to load event:", err);
-      setError("Failed to load event details.");
+
+      const backendError =
+        err?.response?.data?.detail ||
+        "Failed to load event details.";
+
+      setError(backendError);
+      setEvent(null);
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchEvent();
+    let cancelled = false;
+
+    const run = async () => {
+      if (cancelled) return;
+      await fetchEvent();
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   const isOwner = user?.id === event?.owner_id;
   const isPdfPoster = event?.poster_type === "pdf";
   const posterSrc = resolvePosterUrl(event?.poster_url);
 
+  const canShowBuyTickets =
+    event?.has_ticket_sales &&
+    event?.is_live &&
+    event?.approval_status === "approved";
+
   const submitRating = async () => {
     try {
+      setError("");
       await api.post(`/events/${id}/rate`, { value: rating });
       fetchEvent();
     } catch (err) {
@@ -107,6 +137,7 @@ export default function EventDetailPage() {
 
   const submitComment = async () => {
     try {
+      setError("");
       await api.post(`/events/${id}/comment`, { body: comment });
       setComment("");
       fetchEvent();
@@ -161,8 +192,45 @@ export default function EventDetailPage() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="container" style={{ paddingTop: 24 }}>
+        Loading event...
+      </div>
+    );
+  }
+
+  if (error && !event) {
+    return (
+      <div className="container" style={{ paddingTop: 24 }}>
+        <div className="card" style={{ padding: 24, maxWidth: 700 }}>
+          <h2 style={{ marginTop: 0 }}>Unable to open this event</h2>
+          <p style={{ color: "tomato" }}>{error}</p>
+
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
+            <button className="btn" type="button" onClick={fetchEvent}>
+              Retry
+            </button>
+
+            <button
+              className="btn btn-secondary"
+              type="button"
+              onClick={() => navigate("/events")}
+            >
+              Back to Events
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!event) {
-    return <div className="container">Loading...</div>;
+    return (
+      <div className="container" style={{ paddingTop: 24 }}>
+        Event not found.
+      </div>
+    );
   }
 
   return (
@@ -205,10 +273,18 @@ export default function EventDetailPage() {
               {event.location_name && <div className="badge">{event.location_name}</div>}
               {event.category && <div className="badge">{event.category}</div>}
               {event.event_date && <div className="badge">{event.event_date}</div>}
+              <div className="badge">{event.approval_status}</div>
+              {event.has_ticket_sales && <div className="badge">Ticketed</div>}
             </div>
 
             <h2>{event.title}</h2>
             <p>{event.description}</p>
+
+            {event.rejection_reason && isOwner && (
+              <p style={{ color: "tomato" }}>
+                Rejection reason: {event.rejection_reason}
+              </p>
+            )}
 
             {event.price !== null && event.price !== undefined && (
               <p>Price: <strong>KES {event.price}</strong></p>
@@ -218,7 +294,6 @@ export default function EventDetailPage() {
               <p>Payment method: <strong>{event.payment_method}</strong></p>
             )}
 
-            {/* Organizer contact section */}
             <div
               className="card"
               style={{
@@ -254,14 +329,17 @@ export default function EventDetailPage() {
                 </a>
               )}
 
-              {event.payment_link && (
+              {canShowBuyTickets && (
                 <a
                   className="btn btn-secondary"
-                  href={event.payment_link}
-                  target="_blank"
-                  rel="noreferrer"
+                  href={event.payment_link || "#"}
+                  target={event.payment_link ? "_blank" : undefined}
+                  rel={event.payment_link ? "noreferrer" : undefined}
+                  onClick={(e) => {
+                    if (!event.payment_link) e.preventDefault();
+                  }}
                 >
-                  Pay Now
+                  Buy Tickets
                 </a>
               )}
             </div>
@@ -360,6 +438,17 @@ export default function EventDetailPage() {
                   setEditForm({ ...editForm, event_date: e.target.value })
                 }
               />
+
+              <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={editForm.has_ticket_sales}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, has_ticket_sales: e.target.checked })
+                  }
+                />
+                <span>Enable ticket sales for this event</span>
+              </label>
 
               <input
                 className="input"

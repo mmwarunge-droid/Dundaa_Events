@@ -1,23 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
-
-/*
-InfluencerDashboardPage
------------------------
-Creator / influencer control center.
-
-This page handles:
-- posting events
-- viewing influencer tier
-- viewing wallet balance
-- cashing out
-- reviewing transactions
-- viewing only the events created by the logged-in user
-- editing and deleting owned events directly from "My Events"
-- searching and filtering "My Events"
-*/
 
 const CATEGORY_OPTIONS = [
   "Club Events",
@@ -40,6 +25,24 @@ const MY_EVENT_STATUS_OPTIONS = [
   "Past"
 ];
 
+const KYC_DOCUMENT_TYPES = [
+  "passport",
+  "national_id",
+  "drivers_license",
+  "selfie",
+  "utility_bill",
+  "bank_statement",
+  "lease_agreement",
+  "certificate_of_incorporation",
+  "director_id",
+  "shareholder_list",
+  "bank_verification_statement",
+  "venue_agreement",
+  "event_permit",
+  "insurance",
+  "security_plan"
+];
+
 export default function InfluencerDashboardPage() {
   const fileInputRef = useRef(null);
   const { user } = useAuth();
@@ -47,10 +50,14 @@ export default function InfluencerDashboardPage() {
   const [stars, setStars] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [myEvents, setMyEvents] = useState([]);
+  const [kycSubmissions, setKycSubmissions] = useState([]);
+
   const [error, setError] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [editingEventId, setEditingEventId] = useState(null);
+  const [submittingKyc, setSubmittingKyc] = useState(false);
+  const [uploadingKycDoc, setUploadingKycDoc] = useState(false);
 
   const [cashout, setCashout] = useState({
     amount: "1000",
@@ -58,14 +65,12 @@ export default function InfluencerDashboardPage() {
     destination_reference: ""
   });
 
-  // Search/filter state for "My Events".
   const [myEventsFilter, setMyEventsFilter] = useState({
     query: "",
     category: "All",
     status: "All"
   });
 
-  // Event publishing form state.
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -77,10 +82,10 @@ export default function InfluencerDashboardPage() {
     event_date: "",
     price: "",
     payment_method: "",
-    payment_link: ""
+    payment_link: "",
+    has_ticket_sales: false
   });
 
-  // Inline edit form state for My Events.
   const [editForm, setEditForm] = useState({
     title: "",
     description: "",
@@ -91,8 +96,37 @@ export default function InfluencerDashboardPage() {
     event_date: "",
     price: "",
     payment_method: "",
-    payment_link: ""
+    payment_link: "",
+    has_ticket_sales: false
   });
+
+  const [kycForm, setKycForm] = useState({
+    entity_type: "individual",
+    identity_document_type: "national_id",
+    phone_number: "",
+    email_verified: true,
+    phone_verified: false,
+    proof_of_address_type: "utility_bill",
+    business_name: "",
+    trading_name: "",
+    business_registration_number: "",
+    tax_identification_number: "",
+    business_address: "",
+    website_or_social: "",
+    event_description: "",
+    venue_confirmation_text: "",
+    event_date_text: "",
+    event_location_text: "",
+    ticket_pricing_text: "",
+    event_category: "",
+    accepted_terms: false,
+    accepted_anti_fraud: false,
+    accepted_aml: false,
+    accepted_refund_policy: false
+  });
+
+  const [kycDocumentType, setKycDocumentType] = useState("national_id");
+  const [kycDocumentFile, setKycDocumentFile] = useState(null);
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
@@ -102,13 +136,18 @@ export default function InfluencerDashboardPage() {
     return `${API_BASE_URL}${url}`;
   };
 
-  // Load dashboard data.
+  const latestKyc = kycSubmissions?.[0] || null;
+  const hasApprovedKyc = latestKyc?.status === "approved";
+  const hasPendingKyc = latestKyc?.status === "pending";
+  const hasRejectedKyc = latestKyc?.status === "rejected";
+
   const load = async () => {
     try {
-      const [starsRes, txRes, eventsRes] = await Promise.all([
+      const [starsRes, txRes, eventsRes, kycRes] = await Promise.all([
         api.get("/stars"),
         api.get("/transactions"),
-        api.get("/events")
+        api.get("/events"),
+        api.get("/kyc/me")
       ]);
 
       setStars(starsRes.data);
@@ -118,6 +157,7 @@ export default function InfluencerDashboardPage() {
         (event) => event.owner_id === user?.id
       );
       setMyEvents(ownedEvents);
+      setKycSubmissions(kycRes.data || []);
     } catch (err) {
       console.error("Dashboard load failed:", err);
       setError("Failed to load dashboard data.");
@@ -154,17 +194,22 @@ export default function InfluencerDashboardPage() {
     setForm((prev) => ({ ...prev, poster_file: file }));
   };
 
-  // Publish a new event.
   const handleCreate = async (e) => {
     e.preventDefault();
     setError("");
     setPublishing(true);
 
     try {
-      const formData = new FormData();
+      if (form.has_ticket_sales && !hasApprovedKyc) {
+        throw new Error(
+          "KYC approval is required before publishing an event with ticket sales."
+        );
+      }
 
+      const formData = new FormData();
       formData.append("title", form.title);
       formData.append("description", form.description);
+      formData.append("has_ticket_sales", String(form.has_ticket_sales));
 
       if (form.poster_url.trim()) {
         formData.append("poster_url", form.poster_url.trim());
@@ -219,7 +264,8 @@ export default function InfluencerDashboardPage() {
         event_date: "",
         price: "",
         payment_method: "",
-        payment_link: ""
+        payment_link: "",
+        has_ticket_sales: false
       });
 
       if (fileInputRef.current) {
@@ -229,7 +275,11 @@ export default function InfluencerDashboardPage() {
       load();
     } catch (err) {
       console.error("Failed to publish event:", err);
-      setError(err?.response?.data?.detail || "Failed to publish event.");
+      setError(
+        err?.response?.data?.detail ||
+        err?.message ||
+        "Failed to publish event."
+      );
     } finally {
       setPublishing(false);
     }
@@ -260,6 +310,59 @@ export default function InfluencerDashboardPage() {
     }
   };
 
+  const handleSubmitKyc = async (e) => {
+    e.preventDefault();
+    setSubmittingKyc(true);
+    setError("");
+
+    try {
+      const res = await api.post("/kyc/submissions", kycForm);
+      setKycSubmissions((prev) => [res.data, ...prev]);
+    } catch (err) {
+      console.error("KYC submission failed:", err);
+      setError(err?.response?.data?.detail || "Failed to submit KYC.");
+    } finally {
+      setSubmittingKyc(false);
+    }
+  };
+
+  const handleUploadKycDocument = async (e) => {
+    e.preventDefault();
+
+    if (!latestKyc?.id) {
+      setError("Create a KYC submission first before uploading documents.");
+      return;
+    }
+
+    if (!kycDocumentFile) {
+      setError("Choose a document file first.");
+      return;
+    }
+
+    setUploadingKycDoc(true);
+    setError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("document_type", kycDocumentType);
+      formData.append("file", kycDocumentFile);
+
+      await api.post(`/kyc/submissions/${latestKyc.id}/documents`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data"
+        }
+      });
+
+      setKycDocumentFile(null);
+      await load();
+    } catch (err) {
+      console.error("KYC document upload failed:", err);
+      setError(err?.response?.data?.detail || "Failed to upload KYC document.");
+    } finally {
+      setUploadingKycDoc(false);
+    }
+  };
+
   const startEditingEvent = (event) => {
     setEditingEventId(event.id);
     setEditForm({
@@ -272,7 +375,8 @@ export default function InfluencerDashboardPage() {
       event_date: event.event_date || "",
       price: event.price ?? "",
       payment_method: event.payment_method || "",
-      payment_link: event.payment_link || ""
+      payment_link: event.payment_link || "",
+      has_ticket_sales: Boolean(event.has_ticket_sales)
     });
   };
 
@@ -288,7 +392,8 @@ export default function InfluencerDashboardPage() {
       event_date: "",
       price: "",
       payment_method: "",
-      payment_link: ""
+      payment_link: "",
+      has_ticket_sales: false
     });
   };
 
@@ -297,6 +402,12 @@ export default function InfluencerDashboardPage() {
     setActionLoadingId(eventId);
 
     try {
+      if (editForm.has_ticket_sales && !hasApprovedKyc) {
+        throw new Error(
+          "KYC approval is required before enabling ticket sales for this event."
+        );
+      }
+
       await api.put(`/events/${eventId}`, {
         ...editForm,
         category: editForm.category || null,
@@ -310,7 +421,11 @@ export default function InfluencerDashboardPage() {
       load();
     } catch (err) {
       console.error("Event update failed:", err);
-      setError(err?.response?.data?.detail || "Failed to update event.");
+      setError(
+        err?.response?.data?.detail ||
+        err?.message ||
+        "Failed to update event."
+      );
     } finally {
       setActionLoadingId(null);
     }
@@ -340,7 +455,6 @@ export default function InfluencerDashboardPage() {
     }
   };
 
-  // Helper date logic for dashboard filters.
   const isThisWeek = (eventDateString) => {
     if (!eventDateString) return false;
 
@@ -352,7 +466,7 @@ export default function InfluencerDashboardPage() {
     start.setHours(0, 0, 0, 0);
 
     const end = new Date(today);
-    const day = today.getDay(); // 0 Sunday ... 6 Saturday
+    const day = today.getDay();
     const daysUntilSunday = 7 - day === 7 ? 0 : 7 - day;
     end.setDate(today.getDate() + daysUntilSunday);
     end.setHours(23, 59, 59, 999);
@@ -397,7 +511,6 @@ export default function InfluencerDashboardPage() {
     return target >= today;
   };
 
-  // Filtered event list for "My Events".
   const filteredMyEvents = useMemo(() => {
     const q = myEventsFilter.query.trim().toLowerCase();
 
@@ -442,7 +555,7 @@ export default function InfluencerDashboardPage() {
         <div>
           <h1 style={{ margin: 0 }}>Creator Dashboard</h1>
           <p style={{ color: "var(--muted)", marginTop: 8 }}>
-            Publish events, monitor your growth, and manage payouts.
+            Publish events, complete KYC for ticket sales, monitor your growth, and manage payouts.
           </p>
         </div>
       </section>
@@ -478,12 +591,18 @@ export default function InfluencerDashboardPage() {
         </div>
 
         <div className="card" style={{ padding: 24 }}>
-          <h3 style={{ marginTop: 0 }}>My Posted Events</h3>
-          <p style={{ fontSize: "1.4rem", marginBottom: 8 }}>
-            <strong>{myEvents.length}</strong>
+          <h3 style={{ marginTop: 0 }}>KYC Status</h3>
+          <p style={{ fontSize: "1.1rem", marginBottom: 8 }}>
+            <strong>{latestKyc?.status || "not_submitted"}</strong>
           </p>
           <p style={{ color: "var(--muted)" }}>
-            Events currently associated with your account.
+            {hasApprovedKyc
+              ? "Your KYC is approved. You can publish ticketed events."
+              : hasPendingKyc
+              ? "Your KYC is pending admin review."
+              : hasRejectedKyc
+              ? `Latest submission rejected. ${latestKyc?.review_notes || ""}`
+              : "You must submit KYC before publishing ticketed events."}
           </p>
         </div>
       </div>
@@ -578,6 +697,17 @@ export default function InfluencerDashboardPage() {
                 onChange={(e) => setForm({ ...form, event_date: e.target.value })}
               />
 
+              <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={form.has_ticket_sales}
+                  onChange={(e) =>
+                    setForm({ ...form, has_ticket_sales: e.target.checked })
+                  }
+                />
+                <span>Do you want to sell tickets for this event?</span>
+              </label>
+
               <input
                 className="input"
                 type="number"
@@ -607,6 +737,15 @@ export default function InfluencerDashboardPage() {
                 value={form.payment_link}
                 onChange={(e) => setForm({ ...form, payment_link: e.target.value })}
               />
+
+              {form.has_ticket_sales && !hasApprovedKyc && (
+                <div className="card" style={{ padding: 12, background: "rgba(255,255,255,0.03)" }}>
+                  <strong>KYC Required</strong>
+                  <p style={{ color: "var(--muted)", marginBottom: 0 }}>
+                    Complete and get approval for your KYC submission before publishing a ticketed event.
+                  </p>
+                </div>
+              )}
             </div>
 
             <button className="btn" type="submit" disabled={publishing}>
@@ -657,6 +796,260 @@ export default function InfluencerDashboardPage() {
         </div>
       </div>
 
+      <div className="grid grid-2">
+        <div className="card" style={{ padding: 24 }}>
+          <h2>KYC Submission</h2>
+
+          <form className="grid" onSubmit={handleSubmitKyc}>
+            <select
+              className="select"
+              value={kycForm.entity_type}
+              onChange={(e) => setKycForm({ ...kycForm, entity_type: e.target.value })}
+            >
+              <option value="individual">Individual</option>
+              <option value="business">Business</option>
+            </select>
+
+            <select
+              className="select"
+              value={kycForm.identity_document_type}
+              onChange={(e) =>
+                setKycForm({ ...kycForm, identity_document_type: e.target.value })
+              }
+            >
+              <option value="passport">Passport</option>
+              <option value="national_id">National ID</option>
+              <option value="drivers_license">Driver’s License</option>
+            </select>
+
+            <input
+              className="input"
+              placeholder="Phone number"
+              value={kycForm.phone_number}
+              onChange={(e) => setKycForm({ ...kycForm, phone_number: e.target.value })}
+            />
+
+            <select
+              className="select"
+              value={kycForm.proof_of_address_type}
+              onChange={(e) =>
+                setKycForm({ ...kycForm, proof_of_address_type: e.target.value })
+              }
+            >
+              <option value="utility_bill">Utility Bill</option>
+              <option value="bank_statement">Bank Statement</option>
+              <option value="lease_agreement">Lease Agreement</option>
+            </select>
+
+            <input
+              className="input"
+              placeholder="Business name"
+              value={kycForm.business_name}
+              onChange={(e) => setKycForm({ ...kycForm, business_name: e.target.value })}
+            />
+
+            <input
+              className="input"
+              placeholder="Trading name"
+              value={kycForm.trading_name}
+              onChange={(e) => setKycForm({ ...kycForm, trading_name: e.target.value })}
+            />
+
+            <input
+              className="input"
+              placeholder="Business registration number"
+              value={kycForm.business_registration_number}
+              onChange={(e) =>
+                setKycForm({ ...kycForm, business_registration_number: e.target.value })
+              }
+            />
+
+            <input
+              className="input"
+              placeholder="Tax identification number"
+              value={kycForm.tax_identification_number}
+              onChange={(e) =>
+                setKycForm({ ...kycForm, tax_identification_number: e.target.value })
+              }
+            />
+
+            <input
+              className="input"
+              placeholder="Business address"
+              value={kycForm.business_address}
+              onChange={(e) => setKycForm({ ...kycForm, business_address: e.target.value })}
+            />
+
+            <input
+              className="input"
+              placeholder="Website or social media"
+              value={kycForm.website_or_social}
+              onChange={(e) => setKycForm({ ...kycForm, website_or_social: e.target.value })}
+            />
+
+            <textarea
+              className="textarea"
+              placeholder="Event description"
+              value={kycForm.event_description}
+              onChange={(e) => setKycForm({ ...kycForm, event_description: e.target.value })}
+            />
+
+            <textarea
+              className="textarea"
+              placeholder="Venue confirmation / venue agreement summary"
+              value={kycForm.venue_confirmation_text}
+              onChange={(e) =>
+                setKycForm({ ...kycForm, venue_confirmation_text: e.target.value })
+              }
+            />
+
+            <input
+              className="input"
+              placeholder="Event date"
+              value={kycForm.event_date_text}
+              onChange={(e) => setKycForm({ ...kycForm, event_date_text: e.target.value })}
+            />
+
+            <input
+              className="input"
+              placeholder="Event location"
+              value={kycForm.event_location_text}
+              onChange={(e) => setKycForm({ ...kycForm, event_location_text: e.target.value })}
+            />
+
+            <input
+              className="input"
+              placeholder="Ticket pricing"
+              value={kycForm.ticket_pricing_text}
+              onChange={(e) => setKycForm({ ...kycForm, ticket_pricing_text: e.target.value })}
+            />
+
+            <input
+              className="input"
+              placeholder="Event category"
+              value={kycForm.event_category}
+              onChange={(e) => setKycForm({ ...kycForm, event_category: e.target.value })}
+            />
+
+            <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={kycForm.accepted_terms}
+                onChange={(e) =>
+                  setKycForm({ ...kycForm, accepted_terms: e.target.checked })
+                }
+              />
+              <span>I accept the Terms of Service</span>
+            </label>
+
+            <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={kycForm.accepted_anti_fraud}
+                onChange={(e) =>
+                  setKycForm({ ...kycForm, accepted_anti_fraud: e.target.checked })
+                }
+              />
+              <span>I accept the Anti-fraud Declaration</span>
+            </label>
+
+            <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={kycForm.accepted_aml}
+                onChange={(e) =>
+                  setKycForm({ ...kycForm, accepted_aml: e.target.checked })
+                }
+              />
+              <span>I accept AML Compliance</span>
+            </label>
+
+            <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={kycForm.accepted_refund_policy}
+                onChange={(e) =>
+                  setKycForm({ ...kycForm, accepted_refund_policy: e.target.checked })
+                }
+              />
+              <span>I accept the Refund Policy</span>
+            </label>
+
+            <button className="btn" type="submit" disabled={submittingKyc}>
+              {submittingKyc ? "Submitting KYC..." : "Submit KYC"}
+            </button>
+          </form>
+        </div>
+
+        <div className="card" style={{ padding: 24 }}>
+          <h2>KYC Documents</h2>
+
+          <p style={{ color: "var(--muted)" }}>
+            After submitting the KYC form, upload supporting documents here.
+          </p>
+
+          <form className="grid" onSubmit={handleUploadKycDocument}>
+            <select
+              className="select"
+              value={kycDocumentType}
+              onChange={(e) => setKycDocumentType(e.target.value)}
+            >
+              {KYC_DOCUMENT_TYPES.map((docType) => (
+                <option key={docType} value={docType}>
+                  {docType}
+                </option>
+              ))}
+            </select>
+
+            <input
+              type="file"
+              accept=".jpg,.jpeg,.png,.pdf,.webp"
+              onChange={(e) => setKycDocumentFile(e.target.files?.[0] || null)}
+            />
+
+            <button className="btn" type="submit" disabled={uploadingKycDoc}>
+              {uploadingKycDoc ? "Uploading..." : "Upload Document"}
+            </button>
+          </form>
+
+          <div style={{ marginTop: 18 }}>
+            <h3>Latest KYC Packet</h3>
+
+            {!latestKyc ? (
+              <p style={{ color: "var(--muted)" }}>
+                No KYC submission yet.
+              </p>
+            ) : (
+              <>
+                <p><strong>Status:</strong> {latestKyc.status}</p>
+                <p><strong>Review Notes:</strong> {latestKyc.review_notes || "None"}</p>
+
+                <div className="grid" style={{ gap: 8 }}>
+                  {latestKyc.documents?.length ? (
+                    latestKyc.documents.map((doc) => (
+                      <a
+                        key={doc.id}
+                        href={`${API_BASE_URL}${doc.file_url}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-secondary"
+                        style={{ width: "fit-content" }}
+                      >
+                        {doc.document_type} — Open
+                      </a>
+                    ))
+                  ) : (
+                    <p style={{ color: "var(--muted)" }}>
+                      No documents uploaded yet.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="card" style={{ padding: 24 }}>
         <div
           style={{
@@ -680,7 +1073,6 @@ export default function InfluencerDashboardPage() {
           </button>
         </div>
 
-        {/* Search and filter controls for My Events */}
         <div className="grid grid-3" style={{ marginBottom: 20 }}>
           <input
             className="input"
@@ -783,6 +1175,8 @@ export default function InfluencerDashboardPage() {
                         {event.location_name && <div className="badge">{event.location_name}</div>}
                         {event.category && <div className="badge">{event.category}</div>}
                         {event.event_date && <div className="badge">{event.event_date}</div>}
+                        <div className="badge">{event.approval_status}</div>
+                        {event.has_ticket_sales && <div className="badge">Ticketed</div>}
                       </div>
 
                       <h4 style={{ marginTop: 0, marginBottom: 8 }}>{event.title}</h4>
@@ -790,6 +1184,12 @@ export default function InfluencerDashboardPage() {
                       <p style={{ color: "var(--muted)", marginTop: 0 }}>
                         {event.description?.slice(0, 90)}...
                       </p>
+
+                      {event.rejection_reason && (
+                        <p style={{ color: "tomato" }}>
+                          Rejection reason: {event.rejection_reason}
+                        </p>
+                      )}
 
                       {event.price !== null && event.price !== undefined && (
                         <p style={{ marginBottom: 8 }}>
@@ -893,6 +1293,17 @@ export default function InfluencerDashboardPage() {
                             setEditForm({ ...editForm, event_date: e.target.value })
                           }
                         />
+
+                        <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={editForm.has_ticket_sales}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, has_ticket_sales: e.target.checked })
+                            }
+                          />
+                          <span>Enable ticket sales for this event</span>
+                        </label>
 
                         <input
                           className="input"

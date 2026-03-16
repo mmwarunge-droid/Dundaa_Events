@@ -1,15 +1,33 @@
+from datetime import date, datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.models.user import User
-from app.schemas.auth import SignupRequest, LoginRequest, TokenResponse
-from app.security import hash_password, verify_password, create_access_token
+from app.schemas.auth import (
+    AuthStatusResponse,
+    LoginRequest,
+    ReactivateRequest,
+    SignupRequest,
+    TokenResponse,
+)
+from app.security import create_access_token, hash_password, verify_password
 
-
-# Auth routes are grouped under a single router.
 router = APIRouter(tags=["Auth"])
+
+
+def calculate_age_years(date_of_birth: date) -> int:
+    """
+    Calculate age in completed years.
+    """
+    today = date.today()
+
+    years = today.year - date_of_birth.year
+    before_birthday = (today.month, today.day) < (date_of_birth.month, date_of_birth.day)
+
+    return years - 1 if before_birthday else years
 
 
 @router.post("/signup", response_model=TokenResponse)
@@ -17,25 +35,44 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     """
     Register a new user and immediately return an access token.
 
-    Rules:
+    Business rules:
     - email must be unique
     - username must be unique
-    - password is hashed before saving
+    - user must be 18+
+    - if a matching deactivated account exists, user must reactivate instead
     """
-    existing = db.query(User).filter(
-        (User.email == payload.email) | (User.username == payload.username)
-    ).first()
-
-    if existing:
+    age = calculate_age_years(payload.date_of_birth)
+    if age < 18:
         raise HTTPException(
             status_code=400,
-            detail="Email or username already exists"
+            detail="Sorry, Dundaa is only available to people over the age of 18.",
         )
+
+    existing_email = db.query(User).filter(User.email == payload.email).first()
+    if existing_email:
+        if existing_email.account_status == "deactivated":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Your account was previously deactivated. "
+                    "Would you like to reactivate it?"
+                ),
+            )
+        raise HTTPException(status_code=400, detail="Email already exists")
+
+    existing_username = db.query(User).filter(User.username == payload.username).first()
+    if existing_username:
+        raise HTTPException(status_code=400, detail="Username already exists")
 
     user = User(
         email=payload.email,
         username=payload.username,
         hashed_password=hash_password(payload.password),
+        date_of_birth=payload.date_of_birth,
+        gender=payload.gender,
+        role="user",
+        account_status="active",
+        notification_consent=None,
     )
 
     db.add(user)
@@ -49,14 +86,13 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     """
-    Authenticate a user using either:
-    - email
-    - username
+    Authenticate using email or username.
 
-    Also optionally updates stored location during login for
-    event recommendation features.
+    Lifecycle rules:
+    - deactivated accounts are blocked with a reactivation-friendly message
+    - suspended accounts are blocked
+    - deleted accounts are blocked
     """
-    # Search by either email or username.
     user = db.query(User).filter(
         or_(
             User.email == payload.identifier,
@@ -64,14 +100,30 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         )
     ).first()
 
-    # Reject if user is not found or password is invalid.
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials"
+            detail="Invalid credentials",
         )
 
-    # Update location if provided by the frontend/browser.
+    if user.is_deleted or user.account_status == "deleted":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is no longer available.",
+        )
+
+    if user.account_status == "deactivated":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account was previously deactivated. Would you like to reactivate it?",
+        )
+
+    if user.account_status == "suspended":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is suspended.",
+        )
+
     if payload.latitude is not None and payload.longitude is not None:
         user.latitude = payload.latitude
         user.longitude = payload.longitude
@@ -82,3 +134,86 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
     token = create_access_token(str(user.id))
     return TokenResponse(access_token=token)
+
+
+@router.post("/auth/reactivate", response_model=TokenResponse)
+def reactivate_account(payload: ReactivateRequest, db: Session = Depends(get_db)):
+    """
+    Reactivate a previously deactivated account.
+
+    Flow:
+    - user authenticates with old credentials
+    - account status becomes active
+    - new token is issued
+    """
+    user = db.query(User).filter(
+        or_(
+            User.email == payload.identifier,
+            User.username == payload.identifier,
+        )
+    ).first()
+
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
+    if user.is_deleted or user.account_status == "deleted":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is no longer available.",
+        )
+
+    if user.account_status != "deactivated":
+        raise HTTPException(
+            status_code=400,
+            detail="This account does not require reactivation.",
+        )
+
+    user.account_status = "active"
+    user.deactivated_at = None
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token(str(user.id))
+    return TokenResponse(access_token=token)
+
+
+@router.post("/auth/check-status", response_model=AuthStatusResponse)
+def check_auth_status(payload: ReactivateRequest, db: Session = Depends(get_db)):
+    """
+    Optional helper endpoint for frontend auth flows.
+
+    It lets the frontend detect whether an account exists and whether it is
+    deactivated, before presenting a reactivation path.
+    """
+    user = db.query(User).filter(
+        or_(
+            User.email == payload.identifier,
+            User.username == payload.identifier,
+        )
+    ).first()
+
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
+    if user.account_status == "deactivated":
+        return AuthStatusResponse(
+            message="Your account was previously deactivated. Would you like to reactivate it?",
+            account_status="deactivated",
+            can_reactivate=True,
+            name=user.username,
+        )
+
+    return AuthStatusResponse(
+        message="Account is active",
+        account_status=user.account_status,
+        can_reactivate=False,
+        name=user.username,
+    )

@@ -1,33 +1,68 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+
 import Navbar from "./components/Navbar";
+import NotificationConsentModal from "./components/NotificationConsentModal";
 import ProtectedRoute from "./components/ProtectedRoute";
-import HomePage from "./pages/HomePage";
-import LoginPage from "./pages/LoginPage";
-import SignupPage from "./pages/SignupPage";
-import ProfilePage from "./pages/ProfilePage";
-import EventsPage from "./pages/EventsPage";
+import WelcomeMessage from "./components/WelcomeMessage";
+
+import { useAuth } from "./context/AuthContext";
+
 import EventDetailPage from "./pages/EventDetailPage";
+import EventsPage from "./pages/EventsPage";
+import HomePage from "./pages/HomePage";
 import InfluencerDashboardPage from "./pages/InfluencerDashboardPage";
+import LoginPage from "./pages/LoginPage";
+import ProfilePage from "./pages/ProfilePage";
+import SignupPage from "./pages/SignupPage";
 
 /*
 App
 ---
-Top-level web application routing.
+Top-level web application routing and global UX overlays.
 
-Small improvement:
-- root path now redirects to /events for a cleaner authenticated browsing flow
-- HomePage remains available to restore later if needed
+This version adds:
+- welcome message banner
+- notification consent modal
+- root marketing page restored at "/"
+
+Flow:
+1. User signs up / logs in / reactivates
+2. AuthContext stores welcome message
+3. WelcomeMessage shows for 3 seconds
+4. After it disappears, NotificationConsentModal appears if user has not answered yet
 */
 
-export default function App() {
+function AppShell() {
+  const {
+    user,
+    welcomeMessage,
+    clearWelcomeMessage,
+    submitNotificationConsent
+  } = useAuth();
+
+  const shouldShowNotificationConsent =
+    !welcomeMessage &&
+    !!user &&
+    user.notification_consent === null;
+
   return (
-    <BrowserRouter>
+    <>
       <Navbar />
 
+      <WelcomeMessage
+        message={welcomeMessage}
+        onDone={clearWelcomeMessage}
+        duration={3000}
+      />
+
+      <NotificationConsentModal
+        isOpen={shouldShowNotificationConsent}
+        onSelect={submitNotificationConsent}
+      />
+
       <Routes>
-        {/* Optional root redirect for a more direct product flow */}
-        <Route path="/" element={<Navigate to="/events" replace />} />
+        <Route path="/" element={<HomePage />} />
 
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
@@ -68,9 +103,16 @@ export default function App() {
           }
         />
 
-        {/* Fallback route can be adjusted later */}
-        <Route path="*" element={<Navigate to="/events" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppShell />
     </BrowserRouter>
   );
 }

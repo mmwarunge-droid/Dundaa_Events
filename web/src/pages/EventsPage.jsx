@@ -1,21 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+
 import api from "../api/client";
-import SearchBar from "../components/SearchBar";
 import EventCard from "../components/EventCard";
+import SearchBar from "../components/SearchBar";
 
 /*
 EventsPage
 ----------
-Public-facing authenticated event discovery page.
-
-This page is now focused on:
-- browsing events
-- searching events
-- viewing the featured promotion
-- redirecting creators to the dashboard to post events
-
-The event publishing form has been moved to the dashboard.
+Phase 2 behavior:
+- public feed only shows events returned by backend visibility rules
+- non-live ticketed events remain hidden to other users
+- owners still see their own hidden/pending events because the backend keeps
+  owner visibility for compatibility
 */
 
 const FEATURED_AD = {
@@ -32,7 +29,6 @@ export default function EventsPage() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
 
-  // Load event feed from backend.
   const fetchEvents = async () => {
     try {
       const res = await api.get("/events", { params: { query } });
@@ -49,7 +45,6 @@ export default function EventsPage() {
 
   return (
     <div className="container grid" style={{ gap: 28 }}>
-      {/* Page heading + CTA to dashboard */}
       <section className="page-header-bar">
         <div>
           <h1 style={{ margin: 0 }}>Uko na Form???</h1>
@@ -63,7 +58,6 @@ export default function EventsPage() {
         </Link>
       </section>
 
-      {/* Featured promotional placement */}
       <section className="promo-ad card">
         <div className="promo-ad-orb promo-ad-orb-left" />
         <div className="promo-ad-orb promo-ad-orb-right" />
@@ -97,19 +91,16 @@ export default function EventsPage() {
         </div>
       </section>
 
-      {/* Search */}
       <div>
         <SearchBar query={query} setQuery={setQuery} />
       </div>
 
-      {/* Error state */}
       {error && (
         <p style={{ color: "tomato", margin: 0 }}>
           {error}
         </p>
       )}
 
-      {/* Event listing */}
       <div className="grid grid-3">
         {events.map((event) => (
           <EventCard

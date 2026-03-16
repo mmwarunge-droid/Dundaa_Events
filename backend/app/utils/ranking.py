@@ -1,85 +1,256 @@
-from datetime import date, timedelta
+from __future__ import annotations
+
+from datetime import date, datetime, timezone
+from math import radians, sin, cos, sqrt, atan2
+from typing import Optional, Tuple
+
+from app.models.event import Event
 
 
-def average_rating(event) -> float:
+def safe_lower(value: Optional[str]) -> str:
     """
-    Compute average rating for an event.
+    Normalize text safely for case-insensitive matching.
     """
-    if not event.ratings:
+    return (value or "").strip().lower()
+
+
+def haversine_km(
+    lat1: Optional[float],
+    lon1: Optional[float],
+    lat2: Optional[float],
+    lon2: Optional[float],
+) -> Optional[float]:
+    """
+    Compute the great-circle distance between two points on Earth in kilometers.
+
+    Returns None if either point is incomplete.
+    """
+    if None in (lat1, lon1, lat2, lon2):
+        return None
+
+    earth_radius_km = 6371.0
+
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+
+    a = (
+        sin(dlat / 2) ** 2
+        + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    )
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+    return earth_radius_km * c
+
+
+def average_rating(event: Event) -> float:
+    """
+    Compute average rating for an event from its related ratings.
+    """
+    ratings = getattr(event, "ratings", []) or []
+    if not ratings:
         return 0.0
-    return round(sum(r.value for r in event.ratings) / len(event.ratings), 2)
+
+    total = sum(r.value for r in ratings)
+    return round(total / len(ratings), 2)
 
 
-def keyword_score(query: str, title: str, description: str) -> int:
+def keyword_match_score(event: Event, query: Optional[str]) -> float:
     """
-    Give extra weight to events whose title/description matches search terms.
+    Score keyword relevance using simple weighted text matching.
+
+    Fields used:
+    - title
+    - description
+    - category
+    - location_name
     """
-    if not query:
-        return 0
+    if not query or not query.strip():
+        return 0.0
 
-    q_words = [w.strip().lower() for w in query.split() if w.strip()]
-    haystack = f"{title} {description}".lower()
+    q = safe_lower(query)
+    title = safe_lower(getattr(event, "title", None))
+    description = safe_lower(getattr(event, "description", None))
+    category = safe_lower(getattr(event, "category", None))
+    location_name = safe_lower(getattr(event, "location_name", None))
 
-    return sum(3 if word in title.lower() else 1 for word in q_words if word in haystack)
+    score = 0.0
+
+    if q in title:
+        score += 35.0
+    if q in category:
+        score += 20.0
+    if q in location_name:
+        score += 15.0
+    if q in description:
+        score += 10.0
+
+    query_tokens = [token for token in q.split() if token]
+    for token in query_tokens:
+        if token in title:
+            score += 8.0
+        if token in category:
+            score += 5.0
+        if token in location_name:
+            score += 3.0
+        if token in description:
+            score += 2.0
+
+    return score
 
 
-def date_priority_boost(event_date_value) -> int:
+def engagement_score(event: Event) -> float:
     """
-    Rank events by how soon/relevant they are according to your business rule:
+    Lightweight engagement score based on social proof.
 
-    Priority order:
-    1. Happening this week / weekend
-    2. Happening this month
-    3. Happening later this year
-    4. Future next year / far future
-    5. Past events (lowest)
-
-    This function returns a boost that gets added into the overall ranking score.
+    Current inputs:
+    - number of ratings
+    - number of comments
     """
-    if not event_date_value:
-        return 0
+    ratings = getattr(event, "ratings", []) or []
+    comments = getattr(event, "comments", []) or []
 
+    rating_count = len(ratings)
+    comment_count = len(comments)
+
+    return (rating_count * 3.0) + (comment_count * 1.5)
+
+
+def freshness_score(event: Event) -> float:
+    """
+    Favor upcoming events and recent event records.
+
+    Rules:
+    - upcoming events get a higher score
+    - older past events get penalized
+    """
+    score = 0.0
+
+    event_date = getattr(event, "event_date", None)
     today = date.today()
 
-    # Sunday end-of-week assumption
-    days_to_sunday = 6 - today.weekday()
-    end_of_week = today + timedelta(days=days_to_sunday)
+    if event_date:
+        days_diff = (event_date - today).days
 
-    if event_date_value < today:
-        return -60
+        if days_diff < 0:
+            score -= min(abs(days_diff) * 1.5, 30.0)
+        elif days_diff == 0:
+            score += 25.0
+        elif days_diff <= 7:
+            score += 20.0
+        elif days_diff <= 30:
+            score += 12.0
+        elif days_diff <= 90:
+            score += 6.0
+        else:
+            score += 2.0
 
-    if today <= event_date_value <= end_of_week:
-        return 60
+    created_at = getattr(event, "created_at", None)
+    if created_at:
+        if isinstance(created_at, datetime):
+            now = datetime.now(timezone.utc)
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
 
-    if event_date_value.year == today.year and event_date_value.month == today.month:
-        return 40
+            age_days = (now - created_at).days
+            if age_days <= 7:
+                score += 6.0
+            elif age_days <= 30:
+                score += 3.0
 
-    if event_date_value.year == today.year:
-        return 20
+    return score
 
-    return 5
+
+def quality_score(event: Event) -> float:
+    """
+    Reward higher-quality listings.
+
+    Signals:
+    - average rating
+    - poster
+    - location
+    - map link
+    - description length
+    """
+    score = 0.0
+
+    avg = average_rating(event)
+    score += avg * 8.0
+
+    if getattr(event, "poster_url", None):
+        score += 4.0
+
+    if getattr(event, "location_name", None):
+        score += 4.0
+
+    if getattr(event, "google_map_link", None):
+        score += 4.0
+
+    description = getattr(event, "description", "") or ""
+    if len(description.strip()) >= 80:
+        score += 5.0
+    elif len(description.strip()) >= 30:
+        score += 2.0
+
+    return score
+
+
+def distance_score(distance_km: Optional[float]) -> float:
+    """
+    Convert distance into a ranking contribution.
+
+    If distance is unknown, return neutral score.
+    """
+    if distance_km is None:
+        return 0.0
+
+    if distance_km <= 5:
+        return 20.0
+    if distance_km <= 15:
+        return 12.0
+    if distance_km <= 50:
+        return 6.0
+    if distance_km <= 100:
+        return 2.0
+
+    return -4.0
 
 
 def ranking_score(
-    event,
-    query: str | None = None,
-    user_lat: float | None = None,
-    user_lon: float | None = None
-) -> tuple[float, float | None]:
+    event: Event,
+    query: Optional[str],
+    user_latitude: Optional[float],
+    user_longitude: Optional[float],
+) -> Tuple[float, Optional[float]]:
     """
-    Blend:
-    - average rating
+    Main ranking function for Dundaa events.
+
+    Returns:
+    - total score
+    - optional distance in km
+
+    Current algorithm blends:
     - keyword relevance
-    - event date priority
-
-    Distance is no longer used because latitude/longitude have been removed
-    from the event model to match customer behavior.
+    - rating quality
+    - engagement
+    - freshness
+    - listing quality
+    - distance, when available
     """
-    avg = average_rating(event)
-    key = keyword_score(query or "", event.title, event.description)
-    time_boost = date_priority_boost(event.event_date)
+    # Current data model does not store event lat/lng.
+    # We keep distance as None until event coordinates are introduced.
+    distance_km = None
 
-    score = (avg * 20) + (key * 5) + time_boost
+    total = 0.0
+    total += keyword_match_score(event, query)
+    total += quality_score(event)
+    total += engagement_score(event)
+    total += freshness_score(event)
+    total += distance_score(distance_km)
 
-    # Distance is no longer relevant in this product version.
-    return round(score, 2), None
+    if getattr(event, "has_ticket_sales", False):
+        total += 3.0
+
+    if getattr(event, "approval_status", None) == "approved":
+        total += 2.0
+
+    return round(total, 2), distance_km

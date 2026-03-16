@@ -1,11 +1,11 @@
-from datetime import datetime, date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
 from app.schemas.comment import CommentResponse
 from app.schemas.rating import RatingResponse
 
-# Allowed event categories for consistent platform data.
 EventCategory = Literal[
     "Club",
     "Church",
@@ -14,18 +14,17 @@ EventCategory = Literal[
     "Indoor Activities",
     "Corporate",
     "Hobbies",
+    "Sports",
+    "Restaurants and Cafes",
+    "Club Events",
+    "Church Events",
+    "Corporate Events",
 ]
 
-# Allowed payment methods shown in the form.
-PaymentMethod = Literal["MoMo", "Bank", "Card"]
+PaymentMethod = Literal["MoMo", "Bank", "Card", "M-Pesa"]
 
 
 class EventCreate(BaseModel):
-    """
-    Kept for reference / future reuse.
-    In the current upload-enabled implementation, POST /events uses multipart/form-data
-    rather than this direct JSON model.
-    """
     title: str
     description: str
     poster_url: str | None = None
@@ -36,15 +35,10 @@ class EventCreate(BaseModel):
     price: float | None = Field(default=None, ge=0)
     payment_method: PaymentMethod | None = None
     payment_link: str | None = None
+    has_ticket_sales: bool = False
 
 
 class EventUpdate(BaseModel):
-    """
-    Payload for partial event updates.
-
-    Quick edits from the frontend still use JSON PUT requests.
-    Poster updates here remain URL-based for simplicity.
-    """
     title: str | None = None
     description: str | None = None
     poster_url: str | None = None
@@ -55,12 +49,10 @@ class EventUpdate(BaseModel):
     price: float | None = Field(default=None, ge=0)
     payment_method: PaymentMethod | None = None
     payment_link: str | None = None
+    has_ticket_sales: bool | None = None
 
 
 class EventResponse(BaseModel):
-    """
-    Basic event response returned in event listings.
-    """
     id: int
     title: str
     description: str
@@ -74,9 +66,12 @@ class EventResponse(BaseModel):
     payment_method: PaymentMethod | None = None
     payment_link: str | None = None
 
-    owner_id: int
+    has_ticket_sales: bool = False
+    approval_status: str
+    rejection_reason: str | None = None
+    is_live: bool = True
 
-    # Event owner details for display on frontend.
+    owner_id: int
     owner_username: str | None = None
     owner_contact_info: str | None = None
 
@@ -87,9 +82,6 @@ class EventResponse(BaseModel):
 
 
 class EventDetailResponse(EventResponse):
-    """
-    Expanded event response including engagement and ranking metadata.
-    """
     comments: list[CommentResponse] = Field(default_factory=list)
     ratings: list[RatingResponse] = Field(default_factory=list)
     average_rating: float = 0.0

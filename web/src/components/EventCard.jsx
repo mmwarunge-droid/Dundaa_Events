@@ -1,17 +1,22 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 
 /*
 EventCard
 ---------
-Displays a single event preview card.
+Phase 2 additions:
+- approval status badge
+- ticketed badge
+- conditional Buy Tickets button
+- owners can still see pending/rejected states for their own events
 
-Fix included:
-- uploaded posters stored as /uploads/... are resolved against backend URL
-- PDF posters render as a clickable PDF preview card
-- quick edit/delete remain available for owners
+Buy Tickets visibility rules:
+- event.has_ticket_sales must be true
+- event.is_live must be true
+- event.approval_status must be "approved"
 */
 
 const CATEGORY_OPTIONS = [
@@ -21,15 +26,18 @@ const CATEGORY_OPTIONS = [
   "Restaurant",
   "Indoor Activities",
   "Corporate",
-  "Hobbies"
+  "Hobbies",
+  "Sports",
+  "Restaurants and Cafes",
+  "Club Events",
+  "Church Events",
+  "Corporate Events"
 ];
 
-const PAYMENT_METHOD_OPTIONS = ["MoMo", "Bank", "Card"];
+const PAYMENT_METHOD_OPTIONS = ["MoMo", "Bank", "Card", "M-Pesa"];
 
-// Backend base URL used for uploaded local poster files.
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
-// Convert relative backend upload paths into absolute URLs for the browser.
 function resolvePosterUrl(url) {
   if (!url) return null;
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
@@ -54,7 +62,8 @@ export default function EventCard({ event, onEventChanged }) {
     event_date: "",
     price: "",
     payment_method: "",
-    payment_link: ""
+    payment_link: "",
+    has_ticket_sales: false
   });
 
   useEffect(() => {
@@ -68,16 +77,21 @@ export default function EventCard({ event, onEventChanged }) {
       event_date: event.event_date || "",
       price: event.price ?? "",
       payment_method: event.payment_method || "",
-      payment_link: event.payment_link || ""
+      payment_link: event.payment_link || "",
+      has_ticket_sales: Boolean(event.has_ticket_sales)
     });
 
-    // Reset broken-image state if event changes.
     setImageBroken(false);
   }, [event]);
 
   const isOwner = user?.id === event?.owner_id;
   const isPdfPoster = event.poster_type === "pdf";
   const posterSrc = resolvePosterUrl(event.poster_url);
+
+  const canShowBuyTickets =
+    event.has_ticket_sales &&
+    event.is_live &&
+    event.approval_status === "approved";
 
   const handleQuickSave = async () => {
     setError("");
@@ -177,6 +191,8 @@ export default function EventCard({ event, onEventChanged }) {
             <div className="badge">{event.location_name || "Event"}</div>
             {event.category && <div className="badge">{event.category}</div>}
             {event.event_date && <div className="badge">{event.event_date}</div>}
+            <div className="badge">{event.approval_status}</div>
+            {event.has_ticket_sales && <div className="badge">Ticketed</div>}
           </div>
 
           <h3>{event.title}</h3>
@@ -184,6 +200,12 @@ export default function EventCard({ event, onEventChanged }) {
           <p style={{ color: "#b6b6b6", minHeight: 60 }}>
             {event.description.slice(0, 120)}...
           </p>
+
+          {event.rejection_reason && isOwner && (
+            <p style={{ color: "tomato", marginBottom: 6 }}>
+              Rejection reason: {event.rejection_reason}
+            </p>
+          )}
 
           {event.price !== null && event.price !== undefined && (
             <p style={{ marginBottom: 6 }}>
@@ -203,6 +225,20 @@ export default function EventCard({ event, onEventChanged }) {
             <Link className="btn" to={`/events/${event.id}`}>
               View Event
             </Link>
+
+            {canShowBuyTickets && (
+              <a
+                className="btn btn-secondary"
+                href={event.payment_link || "#"}
+                target={event.payment_link ? "_blank" : undefined}
+                rel={event.payment_link ? "noreferrer" : undefined}
+                onClick={(e) => {
+                  if (!event.payment_link) e.preventDefault();
+                }}
+              >
+                Buy Tickets
+              </a>
+            )}
 
             {isOwner && (
               <>
@@ -286,6 +322,15 @@ export default function EventCard({ event, onEventChanged }) {
               onChange={(e) => setForm({ ...form, event_date: e.target.value })}
             />
 
+            <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={form.has_ticket_sales}
+                onChange={(e) => setForm({ ...form, has_ticket_sales: e.target.checked })}
+              />
+              <span>Enable ticket sales</span>
+            </label>
+
             <input
               className="input"
               type="number"
@@ -343,7 +388,8 @@ export default function EventCard({ event, onEventChanged }) {
                   event_date: event.event_date || "",
                   price: event.price ?? "",
                   payment_method: event.payment_method || "",
-                  payment_link: event.payment_link || ""
+                  payment_link: event.payment_link || "",
+                  has_ticket_sales: Boolean(event.has_ticket_sales)
                 });
               }}
             >

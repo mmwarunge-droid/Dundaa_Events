@@ -1,22 +1,21 @@
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 
 /*
 LoginPage
 ---------
-Allows users to log in with either:
-- email
-- username
+Login now supports:
+- standard auth
+- reactivation prompt for deactivated accounts
+- welcome flow message on successful login/reactivation
 
-Flow:
-1. User enters identifier + password
-2. Browser optionally provides location
-3. Frontend sends POST /login
-4. Backend returns JWT token
-5. Token is stored through AuthContext
-6. User is redirected to /events
+Developer note:
+The backend may return:
+- access_token for normal login
+- requires_reactivation=true when the user account is deactivated
 */
 
 export default function LoginPage() {
@@ -31,27 +30,30 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Helper for controlled form input updates.
+  const [reactivationRequired, setReactivationRequired] = useState(false);
+  const [reactivationMessage, setReactivationMessage] = useState("");
+  const [reactivationUserHint, setReactivationUserHint] = useState("");
+
   const handleChange = (field, value) => {
-    setForm({
-      ...form,
+    setForm((prev) => ({
+      ...prev,
       [field]: value
-    });
+    }));
   };
 
-  // Handle login submission.
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
+    setReactivationRequired(false);
+    setReactivationMessage("");
+    setReactivationUserHint("");
 
     let latitude = null;
     let longitude = null;
     let location_name = null;
 
     try {
-      // Ask for browser location permission during login.
-      // This supports location-based event recommendations.
       if (navigator.geolocation) {
         await new Promise((resolve) => {
           navigator.geolocation.getCurrentPosition(
@@ -73,12 +75,26 @@ export default function LoginPage() {
         location_name
       });
 
-      // Save JWT token in auth context.
-      login(res.data.access_token);
+      if (res.data.requires_reactivation) {
+        setReactivationRequired(true);
+        setReactivationMessage(
+          res.data.message ||
+            "Your account was previously deactivated. Would you like to reactivate it?"
+        );
+        setReactivationUserHint(res.data.user_hint || "");
+        return;
+      }
 
-      // Redirect authenticated user to events page.
+      if (!res.data.access_token) {
+        throw new Error("No access token returned from login.");
+      }
+
+      login(
+        res.data.access_token,
+        res.data.message || `Welcome back ${res.data.user_hint || ""}`.trim()
+      );
+
       navigate("/events");
-
     } catch (err) {
       console.error("Login error:", err);
 
@@ -87,13 +103,42 @@ export default function LoginPage() {
         err?.message ||
         "Login failed";
 
-      // FastAPI sometimes returns detail as an array for validation errors.
       if (Array.isArray(backendError)) {
         setError(backendError.map((item) => item.msg).join(", "));
       } else {
         setError(backendError);
       }
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  const handleReactivate = async () => {
+    setError("");
+    setLoading(true);
+
+    try {
+      const res = await api.post("/reactivate-account", {
+        identifier: form.identifier,
+        password: form.password
+      });
+
+      if (!res.data.access_token) {
+        throw new Error("No access token returned from reactivation.");
+      }
+
+      login(
+        res.data.access_token,
+        res.data.message || `Welcome back ${res.data.user_hint || ""}`.trim()
+      );
+
+      navigate("/events");
+    } catch (err) {
+      console.error("Reactivation error:", err);
+      setError(
+        err?.response?.data?.detail ||
+          "Failed to reactivate your account."
+      );
     } finally {
       setLoading(false);
     }
@@ -103,7 +148,7 @@ export default function LoginPage() {
     <div className="container">
       <div
         className="card"
-        style={{ padding: 24, maxWidth: 420, margin: "40px auto" }}
+        style={{ padding: 24, maxWidth: 460, margin: "40px auto" }}
       >
         <h2>Login to Dundaa</h2>
 
@@ -111,6 +156,50 @@ export default function LoginPage() {
           <p style={{ color: "tomato", marginBottom: 12 }}>
             {error}
           </p>
+        )}
+
+        {reactivationRequired && (
+          <div
+            className="card"
+            style={{
+              padding: 16,
+              marginBottom: 16,
+              background: "rgba(255,255,255,0.03)"
+            }}
+          >
+            <p style={{ marginTop: 0 }}>
+              {reactivationMessage}
+            </p>
+
+            {reactivationUserHint && (
+              <p style={{ color: "var(--muted)" }}>
+                Account: <strong>{reactivationUserHint}</strong>
+              </p>
+            )}
+
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <button
+                className="btn"
+                type="button"
+                disabled={loading}
+                onClick={handleReactivate}
+              >
+                {loading ? "Reactivating..." : "Yes, Reactivate"}
+              </button>
+
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={() => {
+                  setReactivationRequired(false);
+                  setReactivationMessage("");
+                  setReactivationUserHint("");
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
 
         <form onSubmit={handleSubmit} className="grid">

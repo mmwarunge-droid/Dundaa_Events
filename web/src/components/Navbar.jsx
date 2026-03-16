@@ -1,26 +1,26 @@
 import React from "react";
 import { Link } from "react-router-dom";
+
 import Logo from "./Logo";
 import { useAuth } from "../context/AuthContext";
 
 /*
 Navbar
 ------
-Top navigation bar for Dundaa.
-
-Now supports the reorganized app structure:
-- Events = discovery
-- Dashboard = creator actions
-- Profile = personal details
+Phase 2 update:
+- Admin users now see an Admin link
+- Structure remains backward-compatible for standard users
 */
 
 export default function Navbar() {
   const { user, logout } = useAuth();
 
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+
   return (
     <nav className="nav">
       <div className="container nav-inner">
-        <Link to="/events" className="nav-brand" aria-label="Dundaa events">
+        <Link to="/" className="nav-brand" aria-label="Dundaa home">
           <Logo />
         </Link>
 
@@ -28,9 +28,13 @@ export default function Navbar() {
           {user && <Link to="/events">Events</Link>}
           {user && <Link to="/dashboard">Dashboard</Link>}
           {user && <Link to="/profile">Profile</Link>}
+          {isAdmin && <Link to="/admin">Admin</Link>}
 
           {!user ? (
-            <Link to="/login">Login</Link>
+            <>
+              <Link to="/login">Login</Link>
+              <Link to="/signup">Signup</Link>
+            </>
           ) : (
             <button className="btn btn-secondary" onClick={logout}>
               Logout

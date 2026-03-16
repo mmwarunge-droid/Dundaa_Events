@@ -1,13 +1,15 @@
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db, get_current_user
+from app.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.schemas.user import UserResponse, ProfileUpdateRequest
+from app.schemas.user import UserResponse, ProfileUpdateRequest, NotificationConsentUpdate
+from app.schemas.user import ProfileUpdateRequest, UserResponse
 
 router = APIRouter(tags=["Profile"])
 
@@ -34,16 +36,20 @@ def update_profile(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Update editable text-based profile fields for the authenticated user.
+    Update editable profile fields for the authenticated user.
 
-    This includes:
-    - username
-    - profile_picture URL (optional legacy/manual usage)
-    - contact_info
-    - gender
-    - location fields
+    Added safeguards:
+    - if username is being changed, ensure uniqueness
     """
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    update_data = payload.model_dump(exclude_unset=True)
+
+    new_username = update_data.get("username")
+    if new_username and new_username != current_user.username:
+        existing = db.query(User).filter(User.username == new_username).first()
+        if existing and existing.id != current_user.id:
+            raise HTTPException(status_code=400, detail="Username already exists")
+
+    for field, value in update_data.items():
         setattr(current_user, field, value)
 
     db.add(current_user)
@@ -75,7 +81,7 @@ def upload_profile_photo(
     if extension not in ALLOWED_PROFILE_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail="Profile photo must be .jpg, .jpeg, .png, or .webp"
+            detail="Profile photo must be .jpg, .jpeg, .png, or .webp",
         )
 
     generated_name = f"{uuid4().hex}{extension}"
@@ -91,3 +97,75 @@ def upload_profile_photo(
     db.refresh(current_user)
 
     return current_user
+
+
+@router.put("/profile/notification-consent", response_model=UserResponse)
+def update_notification_consent(
+    payload: NotificationConsentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Persist the user's YES/NO notification choice.
+
+    This route is intended to be called immediately after the welcome banner
+    disappears during the post-auth flow.
+    """
+    current_user.notification_consent = payload.notification_consent
+
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/profile/deactivate")
+def deactivate_account(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Temporarily deactivate the authenticated user's account.
+
+    Behavior:
+    - user data remains stored
+    - account is marked deactivated
+    - future protected requests are blocked
+    """
+    current_user.account_status = "deactivated"
+    current_user.deactivated_at = datetime.now(timezone.utc)
+
+    db.add(current_user)
+    db.commit()
+
+    return {
+        "message": "Account deactivated successfully."
+    }
+
+
+@router.delete("/profile/account")
+def delete_account(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Permanently delete the authenticated user's account.
+
+    In the current implementation, this is a hard delete.
+    Because relationships already use cascade delete, related records such as:
+    - events
+    - comments
+    - transactions
+    - stars
+    will also be removed.
+
+    Future production hardening:
+    - require password confirmation
+    - anonymize retained audit records if needed
+    """
+    db.delete(current_user)
+    db.commit()
+
+    return {
+        "message": "Account deleted permanently."
+    }
