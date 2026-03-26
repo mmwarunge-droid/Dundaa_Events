@@ -4,7 +4,8 @@ gunicorn
 python-dotenv
 sqlalchemy
 psycopg2-binary
-pydantic
+pydantic[email]
 pydantic-settings
 python-jose[cryptography]
 passlib[bcrypt]
+email-validator
