@@ -1,7 +1,7 @@
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 
-from app.db import Base
+from backend.app.db import Base
 
 
 class Contestant(Base):

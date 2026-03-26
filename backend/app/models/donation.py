@@ -1,7 +1,7 @@
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Boolean, func
 from sqlalchemy.orm import relationship
 
-from app.db import Base
+from backend.app.db import Base
 
 
 class Donation(Base):

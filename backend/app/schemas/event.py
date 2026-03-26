@@ -3,8 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.comment import CommentResponse
-from app.schemas.rating import RatingResponse
+from backend.app.schemas.comment import CommentResponse
+from backend.app.schemas.rating import RatingResponse
 
 EventCategory = Literal[
     "Club",

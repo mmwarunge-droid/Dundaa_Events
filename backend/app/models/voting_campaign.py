@@ -1,7 +1,7 @@
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 
-from app.db import Base
+from backend.app.db import Base
 
 
 class VotingCampaign(Base):

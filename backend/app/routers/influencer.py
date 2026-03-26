@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db, get_current_user
-from app.models.user import User
-from app.models.transaction import Transaction
-from app.schemas.influencer import StarsResponse, CashoutRequest
-from app.utils.influencer import recalculate_user_tier
-from app.utils.payments import generate_reference
+from backend.app.dependencies import get_db, get_current_user
+from backend.app.models.user import User
+from backend.app.models.transaction import Transaction
+from backend.app.schemas.influencer import StarsResponse, CashoutRequest
+from backend.app.utils.influencer import recalculate_user_tier
+from backend.app.utils.payments import generate_reference
 
 router = APIRouter(tags=["Influencer"])
 

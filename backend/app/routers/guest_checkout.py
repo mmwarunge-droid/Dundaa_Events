@@ -2,21 +2,21 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.services.notifications import create_notification
+from backend.app.services.notifications import create_notification
 
-from app.dependencies import get_db, get_optional_current_user
-from app.models.event import Event
-from app.models.guest_order import GuestOrder
-from app.models.transaction import Transaction
-from app.models.user import User
-from app.schemas.guest_checkout import (
+from backend.app.dependencies import get_db, get_optional_current_user
+from backend.app.models.event import Event
+from backend.app.models.guest_order import GuestOrder
+from backend.app.models.transaction import Transaction
+from backend.app.models.user import User
+from backend.app.schemas.guest_checkout import (
     GuestCheckoutCreateRequest,
     GuestCheckoutCreateResponse,
     GuestCheckoutQuoteRequest,
     GuestCheckoutQuoteResponse,
     GuestOrderResponse,
 )
-from app.utils.payments import generate_reference
+from backend.app.utils.payments import generate_reference
 
 router = APIRouter(prefix="/guest", tags=["Guest Checkout"])
 

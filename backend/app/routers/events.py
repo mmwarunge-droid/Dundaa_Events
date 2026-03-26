@@ -4,25 +4,25 @@ from datetime import date
 from math import ceil
 from pathlib import Path
 from uuid import uuid4
-from app.services.notifications import create_notification
+from backend.app.services.notifications import create_notification
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy.orm import Session, joinedload
 
-from app.dependencies import get_current_user, get_db, get_optional_current_user
-from app.models.comment import Comment
-from app.models.event import Event
-from app.models.event_share_click import EventShareClick
-from app.models.influencer_star import InfluencerStar
-from app.models.kyc_submission import KYCSubmission
-from app.models.rating import Rating
-from app.models.user import User
-from app.schemas.comment import CommentCreate, CommentResponse
-from app.schemas.event import EventDetailResponse, EventDiscoveryResponse, EventResponse, EventUpdate
-from app.schemas.guest_checkout import EventShareClickRequest, EventShareClickResponse
-from app.schemas.rating import RatingCreate, RatingResponse
-from app.utils.influencer import recalculate_user_tier
-from app.utils.ranking import average_rating, ranking_score
+from backend.app.dependencies import get_current_user, get_db, get_optional_current_user
+from backend.app.models.comment import Comment
+from backend.app.models.event import Event
+from backend.app.models.event_share_click import EventShareClick
+from backend.app.models.influencer_star import InfluencerStar
+from backend.app.models.kyc_submission import KYCSubmission
+from backend.app.models.rating import Rating
+from backend.app.models.user import User
+from backend.app.schemas.comment import CommentCreate, CommentResponse
+from backend.app.schemas.event import EventDetailResponse, EventDiscoveryResponse, EventResponse, EventUpdate
+from backend.app.schemas.guest_checkout import EventShareClickRequest, EventShareClickResponse
+from backend.app.schemas.rating import RatingCreate, RatingResponse
+from backend.app.utils.influencer import recalculate_user_tier
+from backend.app.utils.ranking import average_rating, ranking_score
 
 router = APIRouter(tags=["Events"])
 

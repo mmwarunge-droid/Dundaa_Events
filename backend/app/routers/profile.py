@@ -6,10 +6,10 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_current_user, get_db
-from app.models.user import User
-from app.schemas.user import UserResponse, ProfileUpdateRequest, NotificationConsentUpdate
-from app.schemas.user import ProfileUpdateRequest, UserResponse
+from backend.app.dependencies import get_current_user, get_db
+from backend.app.models.user import User
+from backend.app.schemas.user import UserResponse, ProfileUpdateRequest, NotificationConsentUpdate
+from backend.app.schemas.user import ProfileUpdateRequest, UserResponse
 
 router = APIRouter(tags=["Profile"])
 

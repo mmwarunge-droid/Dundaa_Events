@@ -5,11 +5,11 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session, joinedload
 
-from app.dependencies import get_current_user, get_db
-from app.models.kyc_document import KYCDocument
-from app.models.kyc_submission import KYCSubmission
-from app.models.user import User
-from app.schemas.kyc import (
+from backend.app.dependencies import get_current_user, get_db
+from backend.app.models.kyc_document import KYCDocument
+from backend.app.models.kyc_submission import KYCSubmission
+from backend.app.models.user import User
+from backend.app.schemas.kyc import (
     KYCProgressResponse,
     KYCRecoverDraftResponse,
     KYCReviewRequest,

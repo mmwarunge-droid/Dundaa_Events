@@ -3,17 +3,17 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from app.dependencies import get_current_admin_user, get_db
-from app.models.event import Event
-from app.models.kyc_submission import KYCSubmission
-from app.models.user import User
-from app.schemas.admin import (
+from backend.app.dependencies import get_current_admin_user, get_db
+from backend.app.models.event import Event
+from backend.app.models.kyc_submission import KYCSubmission
+from backend.app.models.user import User
+from backend.app.schemas.admin import (
     AdminKycDocumentSummary,
     AdminKycHistoryItem,
     AdminKycReviewQueueItem,
 )
-from app.schemas.event import EventResponse, AdminEventApproveRequest
-from app.schemas.kyc import KYCReviewRequest, KYCSubmissionResponse
+from backend.app.schemas.event import EventResponse, AdminEventApproveRequest
+from backend.app.schemas.kyc import KYCReviewRequest, KYCSubmissionResponse
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 

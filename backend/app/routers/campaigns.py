@@ -4,16 +4,16 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, joinedload
-from app.services.notifications import create_notification
+from backend.app.services.notifications import create_notification
 
-from app.dependencies import get_current_user, get_db, get_optional_current_user
-from app.models.campaign import Campaign
-from app.models.donation import Donation
-from app.models.event import Event
-from app.models.kyc_submission import KYCSubmission
-from app.models.transaction import Transaction
-from app.models.user import User
-from app.schemas.campaign import (
+from backend.app.dependencies import get_current_user, get_db, get_optional_current_user
+from backend.app.models.campaign import Campaign
+from backend.app.models.donation import Donation
+from backend.app.models.event import Event
+from backend.app.models.kyc_submission import KYCSubmission
+from backend.app.models.transaction import Transaction
+from backend.app.models.user import User
+from backend.app.schemas.campaign import (
     CampaignCreateRequest,
     CampaignDiscoveryResponse,
     CampaignResponse,
@@ -24,7 +24,7 @@ from app.schemas.campaign import (
     DonationCreateRequest,
     DonationCreateResponse,
 )
-from app.utils.payments import generate_reference
+from backend.app.utils.payments import generate_reference
 
 router = APIRouter(tags=["Campaigns"])
 

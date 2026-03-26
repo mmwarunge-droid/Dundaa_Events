@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, ForeignKey, DateTime, func, UniqueConstraint
 from sqlalchemy.orm import relationship
-from app.db import Base
+from backend.app.db import Base
 
 
 class Rating(Base):

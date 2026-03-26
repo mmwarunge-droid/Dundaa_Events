@@ -4,9 +4,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.db import Base, SessionLocal, engine
-from app.models.user import User
-from app.routers import (
+from backend.app.db import Base, SessionLocal, engine
+from backend.app.models.user import User
+from backend.app.routers import (
     admin,
     auth,
     campaigns,
@@ -21,8 +21,8 @@ from app.routers import (
     transactions,
     voting,
 )
-from app.security import decode_token_or_none
-from app.services.websocket_manager import notification_ws_manager
+from backend.app.security import decode_token_or_none
+from backend.app.services.websocket_manager import notification_ws_manager
 
 Base.metadata.create_all(bind=engine)
 

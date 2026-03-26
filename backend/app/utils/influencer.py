@@ -5,8 +5,8 @@ from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
 
-from app.models.influencer_star import InfluencerStar
-from app.models.user import User
+from backend.app.models.influencer_star import InfluencerStar
+from backend.app.models.user import User
 
 
 THREE_STAR_CONVERSION = 0.25
