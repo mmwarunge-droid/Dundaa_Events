@@ -41,6 +41,11 @@ class Event(Base):
     approved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     is_live = Column(Boolean, nullable=False, default=True)
 
+    # Phase 1 discovery + sharing
+    share_slug = Column(String, unique=True, index=True, nullable=True)
+    share_click_count = Column(Integer, nullable=False, default=0)
+    search_hit_count = Column(Integer, nullable=False, default=0)
+
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -50,3 +55,5 @@ class Event(Base):
 
     comments = relationship("Comment", back_populates="event", cascade="all, delete")
     ratings = relationship("Rating", back_populates="event", cascade="all, delete")
+    guest_orders = relationship("GuestOrder", back_populates="event", cascade="all, delete")
+    share_clicks = relationship("EventShareClick", back_populates="event", cascade="all, delete")

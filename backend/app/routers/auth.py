@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
@@ -23,7 +23,6 @@ def calculate_age_years(date_of_birth: date) -> int:
     Calculate age in completed years.
     """
     today = date.today()
-
     years = today.year - date_of_birth.year
     before_birthday = (today.month, today.day) < (date_of_birth.month, date_of_birth.day)
 
@@ -33,13 +32,7 @@ def calculate_age_years(date_of_birth: date) -> int:
 @router.post("/signup", response_model=TokenResponse)
 def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     """
-    Register a new user and immediately return an access token.
-
-    Business rules:
-    - email must be unique
-    - username must be unique
-    - user must be 18+
-    - if a matching deactivated account exists, user must reactivate instead
+    Register a new user and return an access token.
     """
     age = calculate_age_years(payload.date_of_birth)
     if age < 18:
@@ -87,11 +80,6 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     """
     Authenticate using email or username.
-
-    Lifecycle rules:
-    - deactivated accounts are blocked with a reactivation-friendly message
-    - suspended accounts are blocked
-    - deleted accounts are blocked
     """
     user = db.query(User).filter(
         or_(
@@ -139,12 +127,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 @router.post("/auth/reactivate", response_model=TokenResponse)
 def reactivate_account(payload: ReactivateRequest, db: Session = Depends(get_db)):
     """
-    Reactivate a previously deactivated account.
-
-    Flow:
-    - user authenticates with old credentials
-    - account status becomes active
-    - new token is issued
+    Reactivate a previously deactivated account and return a fresh token.
     """
     user = db.query(User).filter(
         or_(
@@ -186,9 +169,6 @@ def reactivate_account(payload: ReactivateRequest, db: Session = Depends(get_db)
 def check_auth_status(payload: ReactivateRequest, db: Session = Depends(get_db)):
     """
     Optional helper endpoint for frontend auth flows.
-
-    It lets the frontend detect whether an account exists and whether it is
-    deactivated, before presenting a reactivation path.
     """
     user = db.query(User).filter(
         or_(
@@ -217,3 +197,35 @@ def check_auth_status(payload: ReactivateRequest, db: Session = Depends(get_db))
         can_reactivate=False,
         name=user.username,
     )
+
+
+@router.post("/auth/dev/promote-admin")
+def promote_user_to_admin(identifier: str, db: Session = Depends(get_db)):
+    """
+    DEVELOPMENT HELPER ONLY.
+
+    Promote an existing user to admin using email or username.
+    Remove this endpoint in production, or protect it properly.
+    """
+    user = db.query(User).filter(
+        or_(
+            User.email == identifier,
+            User.username == identifier,
+        )
+    ).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.role = "admin"
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "message": "User promoted to admin successfully",
+        "user_id": user.id,
+        "email": user.email,
+        "username": user.username,
+        "role": user.role,
+    }

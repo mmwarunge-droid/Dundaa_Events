@@ -8,8 +8,12 @@ from app.db import SessionLocal
 from app.models.user import User
 from app.security import decode_token
 
-# OAuth2 bearer token extractor for protected routes.
+# Strict bearer extractor for protected routes.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+
+# Optional bearer extractor for public routes that can still benefit
+# from an authenticated user context when a token exists.
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/login", auto_error=False)
 
 
 def get_db() -> Generator:
@@ -23,18 +27,16 @@ def get_db() -> Generator:
         db.close()
 
 
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> User:
+def _resolve_user_from_token(token: str | None, db: Session) -> User | None:
     """
-    Resolve the current authenticated user from the JWT token.
+    Shared token -> user resolver.
 
-    Lifecycle protection:
-    - deactivated users cannot access protected routes
-    - suspended users cannot access protected routes
-    - deleted users cannot access protected routes
+    Returns None if token is missing.
+    Raises auth errors if token is invalid or the account is not usable.
     """
+    if not token:
+        return None
+
     payload = decode_token(token)
     user_id = payload.get("sub")
 
@@ -71,6 +73,33 @@ def get_current_user(
         )
 
     return user
+
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    """
+    Resolve the current authenticated user from the JWT token.
+    """
+    user = _resolve_user_from_token(token, db)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    return user
+
+
+def get_optional_current_user(
+    token: str | None = Depends(oauth2_scheme_optional),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """
+    Public routes can use this to optionally personalize results when a valid
+    token exists, while still allowing guest access.
+    """
+    return _resolve_user_from_token(token, db)
 
 
 def get_current_admin_user(

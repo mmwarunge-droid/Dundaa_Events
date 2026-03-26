@@ -1,40 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import api from "../api/client";
+import GuestCheckoutModal from "./GuestCheckoutModal";
+import ShareButton from "./ShareButton";
 import { useAuth } from "../context/AuthContext";
-
-/*
-EventCard
----------
-Phase 2 additions:
-- approval status badge
-- ticketed badge
-- conditional Buy Tickets button
-- owners can still see pending/rejected states for their own events
-
-Buy Tickets visibility rules:
-- event.has_ticket_sales must be true
-- event.is_live must be true
-- event.approval_status must be "approved"
-*/
-
-const CATEGORY_OPTIONS = [
-  "Club",
-  "Church",
-  "Outdoor Activities",
-  "Restaurant",
-  "Indoor Activities",
-  "Corporate",
-  "Hobbies",
-  "Sports",
-  "Restaurants and Cafes",
-  "Club Events",
-  "Church Events",
-  "Corporate Events"
-];
-
-const PAYMENT_METHOD_OPTIONS = ["MoMo", "Bank", "Card", "M-Pesa"];
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
@@ -44,360 +13,183 @@ function resolvePosterUrl(url) {
   return `${API_BASE_URL}${url}`;
 }
 
-export default function EventCard({ event, onEventChanged }) {
+export default function EventCard({ event }) {
   const { user } = useAuth();
 
   const [imageBroken, setImageBroken] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
-  const [form, setForm] = useState({
-    title: "",
-    description: "",
-    poster_url: "",
-    google_map_link: "",
-    location_name: "",
-    category: "",
-    event_date: "",
-    price: "",
-    payment_method: "",
-    payment_link: "",
-    has_ticket_sales: false
-  });
-
-  useEffect(() => {
-    setForm({
-      title: event.title || "",
-      description: event.description || "",
-      poster_url: event.poster_url || "",
-      google_map_link: event.google_map_link || "",
-      location_name: event.location_name || "",
-      category: event.category || "",
-      event_date: event.event_date || "",
-      price: event.price ?? "",
-      payment_method: event.payment_method || "",
-      payment_link: event.payment_link || "",
-      has_ticket_sales: Boolean(event.has_ticket_sales)
-    });
-
-    setImageBroken(false);
-  }, [event]);
-
-  const isOwner = user?.id === event?.owner_id;
   const isPdfPoster = event.poster_type === "pdf";
   const posterSrc = resolvePosterUrl(event.poster_url);
 
-  const canShowBuyTickets =
+  const isOwner = user?.id === event.owner_id;
+
+  const canShowGuestCheckout = !!event.can_guest_checkout;
+  const canShowPaymentLink =
     event.has_ticket_sales &&
     event.is_live &&
-    event.approval_status === "approved";
+    event.approval_status === "approved" &&
+    !!event.payment_link;
 
-  const handleQuickSave = async () => {
-    setError("");
-    setLoading(true);
+  const trimmedDescription = useMemo(() => {
+    const text = event.description || "";
+    return text.length > 110 ? `${text.slice(0, 110)}...` : text;
+  }, [event.description]);
 
-    try {
-      await api.put(`/events/${event.id}`, {
-        ...form,
-        category: form.category || null,
-        event_date: form.event_date || null,
-        price: form.price === "" ? null : Number(form.price),
-        payment_method: form.payment_method || null,
-        payment_link: form.payment_link || null
-      });
-
-      setIsEditing(false);
-      onEventChanged?.();
-    } catch (err) {
-      console.error("Quick update failed:", err);
-      setError(err?.response?.data?.detail || "Failed to update event.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleQuickDelete = async () => {
-    const confirmed = window.confirm("Delete this event permanently?");
-    if (!confirmed) return;
-
-    setError("");
-    setLoading(true);
-
-    try {
-      await api.delete(`/events/${event.id}`);
-      onEventChanged?.();
-    } catch (err) {
-      console.error("Quick delete failed:", err);
-      setError(err?.response?.data?.detail || "Failed to delete event.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const eventDateLabel = event.event_date || "Date TBA";
+  const locationLabel = event.location_name || "Location TBA";
+  const priceLabel =
+    event.price !== null && event.price !== undefined
+      ? `KES ${event.price}`
+      : event.has_ticket_sales
+      ? "Ticket info soon"
+      : "Free";
 
   return (
-    <div className="card" style={{ padding: 16 }}>
-      {error && (
-        <p style={{ color: "tomato", marginBottom: 12 }}>{error}</p>
-      )}
-
-      {!isEditing ? (
-        <>
-          {posterSrc && !isPdfPoster && !imageBroken ? (
-            <img
-              src={posterSrc}
-              alt={event.title}
-              onError={() => setImageBroken(true)}
-              style={{
-                width: "100%",
-                height: 180,
-                objectFit: "cover",
-                borderRadius: 14,
-                marginBottom: 12
-              }}
-            />
-          ) : posterSrc && isPdfPoster ? (
-            <a
-              href={posterSrc}
-              target="_blank"
-              rel="noreferrer"
-              className="pdf-poster-card"
-              style={{ marginBottom: 12 }}
-            >
-              <span className="pdf-poster-label">PDF Poster</span>
-              <span className="pdf-poster-link">Open PDF</span>
-            </a>
-          ) : (
-            <div
-              style={{
-                width: "100%",
-                height: 180,
-                borderRadius: 14,
-                marginBottom: 12,
-                display: "grid",
-                placeItems: "center",
-                background:
-                  "linear-gradient(135deg, rgba(212,175,55,0.15), rgba(255,255,255,0.03))",
-                border: "1px solid rgba(255,255,255,0.08)",
-                color: "#b6b6b6",
-                fontWeight: 600
-              }}
-            >
-              No poster preview
-            </div>
-          )}
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-            <div className="badge">{event.location_name || "Event"}</div>
-            {event.category && <div className="badge">{event.category}</div>}
-            {event.event_date && <div className="badge">{event.event_date}</div>}
-            <div className="badge">{event.approval_status}</div>
-            {event.has_ticket_sales && <div className="badge">Ticketed</div>}
+    <>
+      <div className="event-card">
+        {posterSrc && !isPdfPoster && !imageBroken ? (
+          <img
+            src={posterSrc}
+            alt={event.title}
+            onError={() => setImageBroken(true)}
+            className="event-card-image"
+          />
+        ) : posterSrc && isPdfPoster ? (
+          <a
+            href={posterSrc}
+            target="_blank"
+            rel="noreferrer"
+            className="pdf-poster-card"
+            style={{ marginBottom: 14 }}
+          >
+            <span className="pdf-poster-label">PDF Poster</span>
+            <span className="pdf-poster-link">Open Poster</span>
+          </a>
+        ) : (
+          <div
+            className="event-card-image"
+            style={{
+              display: "grid",
+              placeItems: "center",
+              background:
+                "linear-gradient(135deg, rgba(255,107,0,0.10), rgba(0,194,168,0.08))",
+              color: "var(--muted)",
+              fontWeight: 700
+            }}
+          >
+            Dundaa Event
           </div>
+        )}
 
-          <h3>{event.title}</h3>
-
-          <p style={{ color: "#b6b6b6", minHeight: 60 }}>
-            {event.description.slice(0, 120)}...
-          </p>
-
-          {event.rejection_reason && isOwner && (
-            <p style={{ color: "tomato", marginBottom: 6 }}>
-              Rejection reason: {event.rejection_reason}
-            </p>
+        <div className="card-meta">
+          {event.category && <span className="badge">{event.category}</span>}
+          <span className="badge">{locationLabel}</span>
+          <span className="badge">{eventDateLabel}</span>
+          {event.has_ticket_sales && <span className="badge">Ticketed</span>}
+          {canShowGuestCheckout && <span className="badge">Guest Checkout</span>}
+          {event.share_click_count > 0 && (
+            <span className="badge">{event.share_click_count} Shares</span>
           )}
-
-          {event.price !== null && event.price !== undefined && (
-            <p style={{ marginBottom: 6 }}>
-              Price: <strong>KES {event.price}</strong>
-            </p>
+          {!event.is_live && isOwner && (
+            <span className="badge">{event.approval_status}</span>
           )}
+        </div>
+
+        <h3 className="card-title">{event.title}</h3>
+
+        <p className="card-copy">{trimmedDescription}</p>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "center",
+            flexWrap: "wrap",
+            marginTop: 8
+          }}
+        >
+          <div>
+            <div style={{ color: "var(--muted)", fontSize: 13 }}>Price</div>
+            <div className="price-emphasis">{priceLabel}</div>
+          </div>
 
           {event.payment_method && (
-            <p style={{ marginBottom: 6 }}>
-              Pay via: <strong>{event.payment_method}</strong>
-            </p>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ color: "var(--muted)", fontSize: 13 }}>Payment</div>
+              <div style={{ fontWeight: 700 }}>{event.payment_method}</div>
+            </div>
           )}
+        </div>
 
-          <p>⭐ {event.average_rating || 0} | Rank {event.ranking_score || 0}</p>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
-            <Link className="btn" to={`/events/${event.id}`}>
-              View Event
-            </Link>
-
-            {canShowBuyTickets && (
-              <a
-                className="btn btn-secondary"
-                href={event.payment_link || "#"}
-                target={event.payment_link ? "_blank" : undefined}
-                rel={event.payment_link ? "noreferrer" : undefined}
-                onClick={(e) => {
-                  if (!event.payment_link) e.preventDefault();
-                }}
-              >
-                Buy Tickets
-              </a>
-            )}
-
-            {isOwner && (
-              <>
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  onClick={() => setIsEditing(true)}
-                >
-                  Edit
-                </button>
-
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  onClick={handleQuickDelete}
-                  disabled={loading}
-                >
-                  {loading ? "Deleting..." : "Delete"}
-                </button>
-              </>
-            )}
+        {event.owner_username && (
+          <div
+            style={{
+              marginTop: 14,
+              paddingTop: 14,
+              borderTop: "1px solid rgba(17,17,17,0.08)",
+              color: "var(--muted)",
+              fontSize: 14
+            }}
+          >
+            Hosted by <strong style={{ color: "var(--text)" }}>{event.owner_username}</strong>
           </div>
-        </>
-      ) : (
-        <>
-          <h3 style={{ marginTop: 0 }}>Quick Edit</h3>
+        )}
 
-          <div className="grid" style={{ gap: 10 }}>
-            <input
-              className="input"
-              placeholder="Event title"
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-            />
-
-            <textarea
-              className="textarea"
-              placeholder="Description"
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-            />
-
-            <input
-              className="input"
-              placeholder="Poster URL"
-              value={form.poster_url}
-              onChange={(e) => setForm({ ...form, poster_url: e.target.value })}
-            />
-
-            <input
-              className="input"
-              placeholder="Google Map link"
-              value={form.google_map_link}
-              onChange={(e) => setForm({ ...form, google_map_link: e.target.value })}
-            />
-
-            <input
-              className="input"
-              placeholder="Location name"
-              value={form.location_name}
-              onChange={(e) => setForm({ ...form, location_name: e.target.value })}
-            />
-
-            <select
-              className="select"
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-            >
-              <option value="">Select category</option>
-              {CATEGORY_OPTIONS.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-
-            <input
-              className="input"
-              type="date"
-              value={form.event_date}
-              onChange={(e) => setForm({ ...form, event_date: e.target.value })}
-            />
-
-            <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={form.has_ticket_sales}
-                onChange={(e) => setForm({ ...form, has_ticket_sales: e.target.checked })}
-              />
-              <span>Enable ticket sales</span>
-            </label>
-
-            <input
-              className="input"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Price"
-              value={form.price}
-              onChange={(e) => setForm({ ...form, price: e.target.value })}
-            />
-
-            <select
-              className="select"
-              value={form.payment_method}
-              onChange={(e) => setForm({ ...form, payment_method: e.target.value })}
-            >
-              <option value="">Select payment method</option>
-              {PAYMENT_METHOD_OPTIONS.map((method) => (
-                <option key={method} value={method}>
-                  {method}
-                </option>
-              ))}
-            </select>
-
-            <input
-              className="input"
-              placeholder="Payment link"
-              value={form.payment_link}
-              onChange={(e) => setForm({ ...form, payment_link: e.target.value })}
-            />
+        {event.rejection_reason && isOwner && (
+          <div
+            className="card"
+            style={{
+              marginTop: 14,
+              padding: 12,
+              background: "#fff4f4",
+              borderColor: "rgba(214,69,69,0.18)",
+              boxShadow: "none"
+            }}
+          >
+            <strong style={{ color: "var(--danger)" }}>Review note</strong>
+            <p style={{ color: "var(--muted)", margin: "8px 0 0" }}>
+              {event.rejection_reason}
+            </p>
           </div>
+        )}
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
-            <button
-              className="btn"
-              type="button"
-              onClick={handleQuickSave}
-              disabled={loading}
-            >
-              {loading ? "Saving..." : "Save"}
-            </button>
+        <div className="card-actions">
+          <Link className="btn" to={`/events/${event.id}`}>
+            View Event
+          </Link>
 
+          <ShareButton event={event} />
+
+          {canShowGuestCheckout && (
             <button
               className="btn btn-secondary"
               type="button"
-              onClick={() => {
-                setIsEditing(false);
-                setError("");
-                setForm({
-                  title: event.title || "",
-                  description: event.description || "",
-                  poster_url: event.poster_url || "",
-                  google_map_link: event.google_map_link || "",
-                  location_name: event.location_name || "",
-                  category: event.category || "",
-                  event_date: event.event_date || "",
-                  price: event.price ?? "",
-                  payment_method: event.payment_method || "",
-                  payment_link: event.payment_link || "",
-                  has_ticket_sales: Boolean(event.has_ticket_sales)
-                });
-              }}
+              onClick={() => setCheckoutOpen(true)}
             >
-              Cancel
+              Buy as Guest
             </button>
-          </div>
-        </>
-      )}
-    </div>
+          )}
+
+          {canShowPaymentLink && (
+            <a
+              className="btn btn-secondary"
+              href={event.payment_link}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Ticket Link
+            </a>
+          )}
+        </div>
+      </div>
+
+      <GuestCheckoutModal
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        event={event}
+      />
+    </>
   );
 }

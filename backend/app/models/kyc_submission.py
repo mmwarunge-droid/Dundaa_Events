@@ -15,18 +15,22 @@ from app.db import Base
 
 class KYCSubmission(Base):
     """
-    Stores one KYC submission per organizer attempt.
-
-    Supports:
-    - individual organizers
-    - business organizers
+    Stores one KYC submission / draft per organizer attempt.
 
     Status values:
+    - draft
     - pending
     - approved
     - rejected
     - needs_more_info
+    - archived
+
+    Draft rules:
+    - users can save and resume later
+    - incomplete drafts may be archived after 3 days of inactivity
+    - archived drafts remain recoverable
     """
+
     __tablename__ = "kyc_submissions"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -34,7 +38,7 @@ class KYCSubmission(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
 
     entity_type = Column(String, nullable=False, default="individual", index=True)
-    status = Column(String, nullable=False, default="pending", index=True)
+    status = Column(String, nullable=False, default="draft", index=True)
 
     identity_document_type = Column(String, nullable=True)
     phone_number = Column(String, nullable=True)
@@ -62,8 +66,12 @@ class KYCSubmission(Base):
     accepted_aml = Column(Boolean, nullable=False, default=False)
     accepted_refund_policy = Column(Boolean, nullable=False, default=False)
 
+    progress_percentage = Column(Integer, nullable=False, default=0)
+    last_updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    archived_at = Column(DateTime(timezone=True), nullable=True)
+
     review_notes = Column(Text, nullable=True)
-    submitted_at = Column(DateTime(timezone=True), server_default=func.now())
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     reviewed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 

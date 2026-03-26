@@ -1,6 +1,7 @@
 import React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
+import Footer from "./components/Footer";
 import Navbar from "./components/Navbar";
 import NotificationConsentModal from "./components/NotificationConsentModal";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -8,6 +9,10 @@ import WelcomeMessage from "./components/WelcomeMessage";
 
 import { useAuth } from "./context/AuthContext";
 
+import AdminRoute from "./components/AdminRoute";
+import AdminDashboardPage from "./pages/AdminDashboardPage";
+import CampaignDetailPage from "./pages/CampaignDetailPage";
+import CampaignsPage from "./pages/CampaignsPage";
 import EventDetailPage from "./pages/EventDetailPage";
 import EventsPage from "./pages/EventsPage";
 import HomePage from "./pages/HomePage";
@@ -15,23 +20,6 @@ import InfluencerDashboardPage from "./pages/InfluencerDashboardPage";
 import LoginPage from "./pages/LoginPage";
 import ProfilePage from "./pages/ProfilePage";
 import SignupPage from "./pages/SignupPage";
-
-/*
-App
----
-Top-level web application routing and global UX overlays.
-
-This version adds:
-- welcome message banner
-- notification consent modal
-- root marketing page restored at "/"
-
-Flow:
-1. User signs up / logs in / reactivates
-2. AuthContext stores welcome message
-3. WelcomeMessage shows for 3 seconds
-4. After it disappears, NotificationConsentModal appears if user has not answered yet
-*/
 
 function AppShell() {
   const {
@@ -61,50 +49,59 @@ function AppShell() {
         onSelect={submitNotificationConsent}
       />
 
-      <Routes>
-        <Route path="/" element={<HomePage />} />
+      <main>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
 
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
 
-        <Route
-          path="/events"
-          element={
-            <ProtectedRoute>
-              <EventsPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route path="/campaigns" element={<CampaignsPage />} />
+          <Route path="/campaigns/:id" element={<CampaignDetailPage />} />
 
-        <Route
-          path="/events/:id"
-          element={
-            <ProtectedRoute>
-              <EventDetailPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route path="/events" element={<EventsPage />} />
 
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute>
-              <ProfilePage />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/events/:id"
+            element={
+              <ProtectedRoute>
+                <EventDetailPage />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <InfluencerDashboardPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <InfluencerDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminDashboardPage />
+              </AdminRoute>
+            }
+          />
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+
+      <Footer />
     </>
   );
 }

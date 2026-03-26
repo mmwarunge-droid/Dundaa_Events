@@ -6,17 +6,11 @@ AuthContext
 -----------
 Centralized auth + session bootstrap state.
 
-Features:
-- auth bootstrap state
-- login/logout token persistence
-- profile refresh helper
-- welcome message support
-- notification consent persistence
-
-Important behavior:
-- protected routes should wait until bootstrap completes
-- logout clears token immediately
-- notification consent updates user state so the modal closes immediately
+This version supports:
+- token persistence
+- user bootstrap from /profile
+- admin role awareness via profile data
+- logout clearing auth state immediately
 */
 
 const AuthContext = createContext(null);
@@ -93,7 +87,10 @@ export function AuthProvider({ children }) {
         console.error("Auth bootstrap failed:", err);
 
         if (!cancelled) {
-          logout();
+          localStorage.removeItem("dundaa_token");
+          setToken(null);
+          setUser(null);
+          setWelcomeMessage("");
         }
       } finally {
         if (!cancelled) {

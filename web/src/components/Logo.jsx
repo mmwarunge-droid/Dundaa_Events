@@ -1,5 +1,5 @@
 import React from "react";
-import logo from "../assets/dundaa-logo-placeholder.svg";
+import logo from "../assets/Dundaa_Logo.png";
 
 /*
 Logo

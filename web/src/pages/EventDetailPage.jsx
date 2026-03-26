@@ -1,31 +1,12 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 
 import api from "../api/client";
 import CommentList from "../components/CommentList";
+import GuestCheckoutModal from "../components/GuestCheckoutModal";
 import RatingStars from "../components/RatingStars";
+import ShareButton from "../components/ShareButton";
 import { useAuth } from "../context/AuthContext";
-
-/*
-EventDetailPage
----------------
-Phase 2 additions:
-- event approval/ticketing state is visible
-- Buy Tickets button appears only when the event is ticketed and approved/live
-- owners can still see rejection reasons on their own events
-*/
-
-const CATEGORY_OPTIONS = [
-  "Club",
-  "Church",
-  "Outdoor Activities",
-  "Restaurant",
-  "Indoor Activities",
-  "Corporate",
-  "Hobbies"
-];
-
-const PAYMENT_METHOD_OPTIONS = ["MoMo", "Bank", "Card", "M-Pesa"];
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
@@ -37,517 +18,366 @@ function resolvePosterUrl(url) {
 
 export default function EventDetailPage() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const { user } = useAuth();
 
   const [event, setEvent] = useState(null);
+  const [commentBody, setCommentBody] = useState("");
+  const [commentLoading, setCommentLoading] = useState(false);
+  const [ratingLoading, setRatingLoading] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const [rating, setRating] = useState(0);
-  const [comment, setComment] = useState("");
-
-  const [isEditing, setIsEditing] = useState(false);
-
-  const [editForm, setEditForm] = useState({
-    title: "",
-    description: "",
-    poster_url: "",
-    google_map_link: "",
-    location_name: "",
-    category: "",
-    event_date: "",
-    price: "",
-    payment_method: "",
-    payment_link: "",
-    has_ticket_sales: false
-  });
-
-  const [error, setError] = useState("");
-  const [actionLoading, setActionLoading] = useState(false);
-
-  const fetchEvent = async () => {
+  const loadEvent = async () => {
     try {
       setLoading(true);
       setError("");
 
       const res = await api.get(`/events/${id}`);
       setEvent(res.data);
-
-      setEditForm({
-        title: res.data.title || "",
-        description: res.data.description || "",
-        poster_url: res.data.poster_url || "",
-        google_map_link: res.data.google_map_link || "",
-        location_name: res.data.location_name || "",
-        category: res.data.category || "",
-        event_date: res.data.event_date || "",
-        price: res.data.price ?? "",
-        payment_method: res.data.payment_method || "",
-        payment_link: res.data.payment_link || "",
-        has_ticket_sales: Boolean(res.data.has_ticket_sales)
-      });
     } catch (err) {
       console.error("Failed to load event:", err);
-
-      const backendError =
-        err?.response?.data?.detail ||
-        "Failed to load event details.";
-
-      setError(backendError);
-      setEvent(null);
+      setError(err?.response?.data?.detail || "Failed to load event.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      if (cancelled) return;
-      await fetchEvent();
-    };
-
-    run();
-
-    return () => {
-      cancelled = true;
-    };
+    loadEvent();
   }, [id]);
 
-  const isOwner = user?.id === event?.owner_id;
-  const isPdfPoster = event?.poster_type === "pdf";
-  const posterSrc = resolvePosterUrl(event?.poster_url);
+  const posterSrc = useMemo(
+    () => resolvePosterUrl(event?.poster_url),
+    [event?.poster_url]
+  );
 
-  const canShowBuyTickets =
+  const canShowGuestCheckout = !!event?.can_guest_checkout;
+  const canShowPaymentLink =
     event?.has_ticket_sales &&
     event?.is_live &&
-    event?.approval_status === "approved";
+    event?.approval_status === "approved" &&
+    !!event?.payment_link;
 
-  const submitRating = async () => {
-    try {
-      setError("");
-      await api.post(`/events/${id}/rate`, { value: rating });
-      fetchEvent();
-    } catch (err) {
-      console.error("Rating failed:", err);
-      setError(err?.response?.data?.detail || "Failed to submit rating.");
+  const isOwner = user?.id === event?.owner_id;
+
+  const submitComment = async (e) => {
+    e.preventDefault();
+
+    if (!user) {
+      setError("Please login to comment.");
+      return;
     }
-  };
 
-  const submitComment = async () => {
+    if (!commentBody.trim()) return;
+
     try {
+      setCommentLoading(true);
       setError("");
-      await api.post(`/events/${id}/comment`, { body: comment });
-      setComment("");
-      fetchEvent();
-    } catch (err) {
-      console.error("Comment failed:", err);
-      setError(err?.response?.data?.detail || "Failed to post comment.");
-    }
-  };
 
-  const saveEdits = async () => {
-    setError("");
-    setActionLoading(true);
-
-    try {
-      await api.put(`/events/${id}`, {
-        ...editForm,
-        category: editForm.category || null,
-        event_date: editForm.event_date || null,
-        price: editForm.price === "" ? null : Number(editForm.price),
-        payment_method: editForm.payment_method || null,
-        payment_link: editForm.payment_link || null
+      await api.post(`/events/${id}/comment`, {
+        body: commentBody.trim()
       });
 
-      setIsEditing(false);
-      fetchEvent();
+      setCommentBody("");
+      await loadEvent();
     } catch (err) {
-      console.error("Update failed:", err);
-      setError(err?.response?.data?.detail || "Failed to update event.");
+      console.error("Comment submit failed:", err);
+      setError(err?.response?.data?.detail || "Failed to post comment.");
     } finally {
-      setActionLoading(false);
+      setCommentLoading(false);
     }
   };
 
-  const handleDelete = async () => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this event? This cannot be undone."
-    );
-
-    if (!confirmed) return;
-
-    setError("");
-    setActionLoading(true);
+  const submitRating = async (value) => {
+    if (!user) {
+      setError("Please login to rate this event.");
+      return;
+    }
 
     try {
-      await api.delete(`/events/${id}`);
-      navigate("/events");
+      setRatingLoading(true);
+      setError("");
+
+      await api.post(`/events/${id}/rate`, { value });
+      await loadEvent();
     } catch (err) {
-      console.error("Delete failed:", err);
-      setError(err?.response?.data?.detail || "Failed to delete event.");
+      console.error("Rating submit failed:", err);
+      setError(err?.response?.data?.detail || "Failed to submit rating.");
     } finally {
-      setActionLoading(false);
+      setRatingLoading(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="container" style={{ paddingTop: 24 }}>
-        Loading event...
+      <div className="container" style={{ padding: 24 }}>
+        <p style={{ color: "var(--muted)" }}>Loading event...</p>
       </div>
     );
   }
 
   if (error && !event) {
     return (
-      <div className="container" style={{ paddingTop: 24 }}>
-        <div className="card" style={{ padding: 24, maxWidth: 700 }}>
-          <h2 style={{ marginTop: 0 }}>Unable to open this event</h2>
-          <p style={{ color: "tomato" }}>{error}</p>
-
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
-            <button className="btn" type="button" onClick={fetchEvent}>
-              Retry
-            </button>
-
-            <button
-              className="btn btn-secondary"
-              type="button"
-              onClick={() => navigate("/events")}
-            >
-              Back to Events
-            </button>
-          </div>
-        </div>
+      <div className="container" style={{ padding: 24 }}>
+        <p style={{ color: "tomato" }}>{error}</p>
+        <Link className="btn" to="/events">
+          Back to Events
+        </Link>
       </div>
     );
   }
 
-  if (!event) {
-    return (
-      <div className="container" style={{ paddingTop: 24 }}>
-        Event not found.
-      </div>
-    );
-  }
+  if (!event) return null;
 
   return (
-    <div className="container grid grid-2">
-      <div className="card" style={{ padding: 24 }}>
+    <>
+      <div className="container grid" style={{ gap: 28 }}>
         {error && (
-          <p style={{ color: "tomato", marginBottom: 12 }}>{error}</p>
+          <p style={{ color: "tomato", margin: 0 }}>
+            {error}
+          </p>
         )}
 
-        {!isEditing ? (
-          <>
-            {posterSrc && !isPdfPoster && (
+        <section className="market-hero" style={{ alignItems: "start" }}>
+          <div className="card" style={{ padding: 24, borderRadius: 28 }}>
+            {posterSrc ? (
               <img
                 src={posterSrc}
                 alt={event.title}
                 style={{
                   width: "100%",
-                  borderRadius: 18,
-                  marginBottom: 16,
-                  maxHeight: 320,
-                  objectFit: "cover"
+                  maxHeight: 440,
+                  objectFit: "cover",
+                  borderRadius: 22,
+                  marginBottom: 18
                 }}
               />
-            )}
-
-            {posterSrc && isPdfPoster && (
-              <a
-                href={posterSrc}
-                target="_blank"
-                rel="noreferrer"
-                className="pdf-poster-card"
-                style={{ marginBottom: 16 }}
+            ) : (
+              <div
+                style={{
+                  width: "100%",
+                  minHeight: 360,
+                  borderRadius: 22,
+                  marginBottom: 18,
+                  display: "grid",
+                  placeItems: "center",
+                  background:
+                    "linear-gradient(135deg, rgba(255,107,0,0.12), rgba(0,194,168,0.08))",
+                  color: "var(--muted)",
+                  fontWeight: 800,
+                  fontSize: "1.2rem"
+                }}
               >
-                <span className="pdf-poster-label">PDF Poster</span>
-                <span className="pdf-poster-link">Open PDF</span>
-              </a>
+                Dundaa Event
+              </div>
             )}
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-              {event.location_name && <div className="badge">{event.location_name}</div>}
-              {event.category && <div className="badge">{event.category}</div>}
-              {event.event_date && <div className="badge">{event.event_date}</div>}
-              <div className="badge">{event.approval_status}</div>
-              {event.has_ticket_sales && <div className="badge">Ticketed</div>}
+            <div className="card-meta">
+              {event.category && <span className="badge">{event.category}</span>}
+              {event.location_name && <span className="badge">{event.location_name}</span>}
+              {event.event_date && <span className="badge">{event.event_date}</span>}
+              {event.has_ticket_sales && <span className="badge">Ticketed</span>}
+              {canShowGuestCheckout && <span className="badge">Guest Checkout</span>}
             </div>
 
-            <h2>{event.title}</h2>
-            <p>{event.description}</p>
+            <h1 style={{ marginTop: 10, marginBottom: 10, fontSize: "clamp(2rem, 4vw, 3.3rem)", lineHeight: 1.04 }}>
+              {event.title}
+            </h1>
+
+            <p style={{ color: "var(--muted)", marginTop: 0 }}>
+              Hosted by <strong style={{ color: "var(--text)" }}>{event.owner_username || "Creator"}</strong>
+            </p>
+
+            <p style={{ fontSize: "1.04rem", lineHeight: 1.7 }}>
+              {event.description}
+            </p>
 
             {event.rejection_reason && isOwner && (
-              <p style={{ color: "tomato" }}>
-                Rejection reason: {event.rejection_reason}
-              </p>
+              <div
+                className="card"
+                style={{
+                  padding: 14,
+                  marginTop: 16,
+                  background: "#fff4f4",
+                  borderColor: "rgba(214,69,69,0.18)",
+                  boxShadow: "none"
+                }}
+              >
+                <strong style={{ color: "var(--danger)" }}>Review note</strong>
+                <p style={{ color: "var(--muted)", margin: "8px 0 0" }}>
+                  {event.rejection_reason}
+                </p>
+              </div>
             )}
 
-            {event.price !== null && event.price !== undefined && (
-              <p>Price: <strong>KES {event.price}</strong></p>
-            )}
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
+              <ShareButton event={event} />
 
-            {event.payment_method && (
-              <p>Payment method: <strong>{event.payment_method}</strong></p>
-            )}
+              {canShowGuestCheckout && (
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => setCheckoutOpen(true)}
+                >
+                  Buy as Guest
+                </button>
+              )}
+
+              {canShowPaymentLink && (
+                <a
+                  className="btn btn-secondary"
+                  href={event.payment_link}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Ticket Link
+                </a>
+              )}
+            </div>
+          </div>
+
+          <div className="market-search-card">
+            <h3>Quick event details</h3>
+            <p>Everything you need before checkout.</p>
+
+            <div className="grid" style={{ gap: 14 }}>
+              <div className="card" style={{ padding: 16, boxShadow: "none" }}>
+                <div style={{ color: "var(--muted)", fontSize: 13 }}>Price</div>
+                <div className="price-emphasis">
+                  {event.price !== null && event.price !== undefined
+                    ? `KES ${event.price}`
+                    : event.has_ticket_sales
+                    ? "Ticket info soon"
+                    : "Free"}
+                </div>
+              </div>
+
+              <div className="card" style={{ padding: 16, boxShadow: "none" }}>
+                <div style={{ color: "var(--muted)", fontSize: 13 }}>Payment Method</div>
+                <div style={{ fontWeight: 800 }}>
+                  {event.payment_method || "To be confirmed"}
+                </div>
+              </div>
+
+              <div className="card" style={{ padding: 16, boxShadow: "none" }}>
+                <div style={{ color: "var(--muted)", fontSize: 13 }}>Average Rating</div>
+                <div style={{ fontWeight: 800 }}>
+                  {event.average_rating || 0}
+                </div>
+              </div>
+
+              {event.google_map_link && (
+                <a
+                  href={event.google_map_link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-secondary"
+                >
+                  Open location map
+                </a>
+              )}
+
+              <div className="card" style={{ padding: 16, background: "var(--accent-soft)", borderColor: "rgba(0,194,168,0.14)", boxShadow: "none" }}>
+                <strong style={{ color: "var(--success)" }}>Why Dundaa feels safer</strong>
+                <p style={{ color: "var(--muted)", margin: "8px 0 0" }}>
+                  Clear payments, quick checkout options, and stronger event review flows help create trust.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="grid grid-2">
+          <div className="card" style={{ padding: 24 }}>
+            <h2 style={{ marginTop: 0 }}>Ratings</h2>
+            <p style={{ color: "var(--muted)" }}>
+              Leave feedback and help others discover great experiences.
+            </p>
 
             <div
               className="card"
               style={{
                 padding: 16,
-                marginTop: 18,
-                marginBottom: 18,
-                background: "rgba(255,255,255,0.02)"
+                marginBottom: 16,
+                background: "#fffaf5",
+                borderColor: "rgba(255,107,0,0.12)",
+                boxShadow: "none"
               }}
             >
-              <h3 style={{ marginTop: 0, marginBottom: 10 }}>Contact the organizer</h3>
-
-              <p style={{ marginBottom: 8 }}>
-                <strong>Organizer:</strong> {event.owner_username || "Event organizer"}
-              </p>
-
-              <p style={{ margin: 0, color: "var(--muted)" }}>
-                {event.owner_contact_info || "Organizer contact details have not been added yet."}
-              </p>
+              <div style={{ color: "var(--muted)", fontSize: 13 }}>Current average</div>
+              <div className="price-emphasis">{event.average_rating || 0}</div>
             </div>
 
-            <p>Average Rating: {event.average_rating}</p>
-            <p>Ranking Score: {event.ranking_score}</p>
+            <RatingStars disabled={ratingLoading} onRate={submitRating} />
 
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 14 }}>
-              {event.google_map_link && (
-                <a
-                  className="btn"
-                  href={event.google_map_link}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open Map
-                </a>
-              )}
-
-              {canShowBuyTickets && (
-                <a
-                  className="btn btn-secondary"
-                  href={event.payment_link || "#"}
-                  target={event.payment_link ? "_blank" : undefined}
-                  rel={event.payment_link ? "noreferrer" : undefined}
-                  onClick={(e) => {
-                    if (!event.payment_link) e.preventDefault();
-                  }}
-                >
-                  Buy Tickets
-                </a>
-              )}
-            </div>
-
-            {isOwner && (
-              <div style={{ marginTop: 20, display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <button
-                  className="btn"
-                  type="button"
-                  onClick={() => setIsEditing(true)}
-                >
-                  Edit Event
-                </button>
-
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  onClick={handleDelete}
-                  disabled={actionLoading}
-                >
-                  {actionLoading ? "Deleting..." : "Delete Event"}
-                </button>
-              </div>
+            {!user && (
+              <p style={{ color: "var(--muted)", marginTop: 14 }}>
+                Login to rate this event.
+              </p>
             )}
-          </>
-        ) : (
-          <>
-            <h2>Edit Event</h2>
+          </div>
 
-            <div className="grid" style={{ gap: 12 }}>
-              <input
-                className="input"
-                placeholder="Event title"
-                value={editForm.title}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, title: e.target.value })
-                }
-              />
+          <div className="card" style={{ padding: 24 }}>
+            <h2 style={{ marginTop: 0 }}>Comments</h2>
+            <p style={{ color: "var(--muted)" }}>
+              Ask questions, react, and share your thoughts.
+            </p>
 
-              <textarea
-                className="textarea"
-                placeholder="Description"
-                value={editForm.description}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, description: e.target.value })
-                }
-              />
-
-              <input
-                className="input"
-                placeholder="Poster URL"
-                value={editForm.poster_url}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, poster_url: e.target.value })
-                }
-              />
-
-              <input
-                className="input"
-                placeholder="Google Map link"
-                value={editForm.google_map_link}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, google_map_link: e.target.value })
-                }
-              />
-
-              <input
-                className="input"
-                placeholder="Location name"
-                value={editForm.location_name}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, location_name: e.target.value })
-                }
-              />
-
-              <select
-                className="select"
-                value={editForm.category}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, category: e.target.value })
-                }
-              >
-                <option value="">Select category</option>
-                {CATEGORY_OPTIONS.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                className="input"
-                type="date"
-                value={editForm.event_date}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, event_date: e.target.value })
-                }
-              />
-
-              <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={editForm.has_ticket_sales}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, has_ticket_sales: e.target.checked })
-                  }
+            {user ? (
+              <form className="grid" onSubmit={submitComment}>
+                <textarea
+                  className="textarea"
+                  placeholder="Write a comment"
+                  value={commentBody}
+                  onChange={(e) => setCommentBody(e.target.value)}
                 />
-                <span>Enable ticket sales for this event</span>
-              </label>
+                <button className="btn" type="submit" disabled={commentLoading}>
+                  {commentLoading ? "Posting..." : "Post Comment"}
+                </button>
+              </form>
+            ) : (
+              <p style={{ color: "var(--muted)" }}>
+                Login to comment on this event.
+              </p>
+            )}
 
-              <input
-                className="input"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Price"
-                value={editForm.price}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, price: e.target.value })
-                }
-              />
-
-              <select
-                className="select"
-                value={editForm.payment_method}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, payment_method: e.target.value })
-                }
-              >
-                <option value="">Select payment method</option>
-                {PAYMENT_METHOD_OPTIONS.map((method) => (
-                  <option key={method} value={method}>
-                    {method}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                className="input"
-                placeholder="Payment link"
-                value={editForm.payment_link}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, payment_link: e.target.value })
-                }
-              />
+            <div style={{ marginTop: 18 }}>
+              <CommentList comments={event.comments || []} />
             </div>
+          </div>
+        </section>
 
-            <div style={{ marginTop: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <button
-                className="btn"
-                type="button"
-                onClick={saveEdits}
-                disabled={actionLoading}
-              >
-                {actionLoading ? "Saving..." : "Save Changes"}
-              </button>
-
-              <button
-                className="btn btn-secondary"
-                type="button"
-                onClick={() => {
-                  setIsEditing(false);
-                  setError("");
-                  fetchEvent();
-                }}
-              >
-                Cancel
-              </button>
+        <section className="grid" style={{ gap: 16 }}>
+          <div className="section-head">
+            <div>
+              <h2>Why attend through Dundaa?</h2>
+              <p>Built for discovery, confidence, and quick action.</p>
             </div>
-          </>
-        )}
+          </div>
+
+          <div className="trust-grid">
+            <div className="trust-card">
+              <h3>Fast booking flow</h3>
+              <p>Move from discovery to checkout with fewer steps and clearer next actions.</p>
+            </div>
+            <div className="trust-card">
+              <h3>Trusted event discovery</h3>
+              <p>Structured event listings and review states help users feel more confident.</p>
+            </div>
+            <div className="trust-card">
+              <h3>Guest-friendly checkout</h3>
+              <p>Buy quickly without being forced through a long account setup process first.</p>
+            </div>
+          </div>
+        </section>
       </div>
 
-      <div className="grid" style={{ gap: 20 }}>
-        <div className="card" style={{ padding: 24 }}>
-          <h3>Rate this event</h3>
-          <RatingStars value={rating} onChange={setRating} />
-          <button
-            className="btn"
-            onClick={submitRating}
-            style={{ marginTop: 12 }}
-          >
-            Submit Rating
-          </button>
-        </div>
-
-        <div className="card" style={{ padding: 24 }}>
-          <h3>Comment</h3>
-          <textarea
-            className="textarea"
-            maxLength={280}
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-          />
-          <button
-            className="btn"
-            onClick={submitComment}
-            style={{ marginTop: 12 }}
-          >
-            Post Comment
-          </button>
-        </div>
-
-        <div>
-          <h3>Comments</h3>
-          <CommentList comments={event.comments || []} />
-        </div>
-      </div>
-    </div>
+      <GuestCheckoutModal
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        event={event}
+      />
+    </>
   );
 }

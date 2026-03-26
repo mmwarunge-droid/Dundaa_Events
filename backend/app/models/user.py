@@ -14,6 +14,7 @@ class User(Base):
     - welcome / consent UX
     - account deactivation / deletion / suspension handling
     - admin authorization
+    - internal Dundaa Coins wallet
     """
 
     __tablename__ = "users"
@@ -35,9 +36,10 @@ class User(Base):
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
 
-    # Influencer system
+    # Influencer / earnings system
     influencer_tier = Column(String, default="none")
-    wallet_balance = Column(Float, default=0.0)
+    wallet_balance = Column(Float, default=0.0)   # cash balance
+    coin_balance = Column(Integer, default=0)     # Dundaa Coins
 
     # Authorization / platform role
     role = Column(String, nullable=False, default="user")
@@ -64,11 +66,11 @@ class User(Base):
 
     # Relationships
     events = relationship(
-    "Event",
-    back_populates="owner",
-    cascade="all, delete",
-    foreign_keys="Event.owner_id",
-)
+        "Event",
+        back_populates="owner",
+        cascade="all, delete",
+        foreign_keys="Event.owner_id",
+    )
     comments = relationship("Comment", back_populates="user", cascade="all, delete")
 
     ratings = relationship(

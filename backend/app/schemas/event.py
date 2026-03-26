@@ -34,7 +34,6 @@ class EventCreate(BaseModel):
     event_date: date | None = None
     price: float | None = Field(default=None, ge=0)
     payment_method: PaymentMethod | None = None
-    payment_link: str | None = None
     has_ticket_sales: bool = False
 
 
@@ -48,8 +47,13 @@ class EventUpdate(BaseModel):
     event_date: date | None = None
     price: float | None = Field(default=None, ge=0)
     payment_method: PaymentMethod | None = None
-    payment_link: str | None = None
     has_ticket_sales: bool | None = None
+
+
+class AdminEventApproveRequest(BaseModel):
+    payment_link: str | None = None
+    price: float | None = Field(default=None, ge=0)
+    payment_method: PaymentMethod | None = None
 
 
 class EventResponse(BaseModel):
@@ -71,6 +75,13 @@ class EventResponse(BaseModel):
     rejection_reason: str | None = None
     is_live: bool = True
 
+    # Phase 1 discovery/sharing fields
+    share_slug: str | None = None
+    share_click_count: int = 0
+    search_hit_count: int = 0
+    share_url: str | None = None
+    can_guest_checkout: bool = False
+
     owner_id: int
     owner_username: str | None = None
     owner_contact_info: str | None = None
@@ -87,3 +98,11 @@ class EventDetailResponse(EventResponse):
     average_rating: float = 0.0
     ranking_score: float = 0.0
     distance_km: float | None = None
+
+
+class EventDiscoveryResponse(BaseModel):
+    items: list[EventResponse]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int

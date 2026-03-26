@@ -30,17 +30,23 @@ def create_access_token(subject: str):
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def decode_token(token: str):
-
+def decode_token_or_none(token: str):
     try:
         return jwt.decode(
             token,
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM]
         )
-
     except JWTError:
+        return None
+
+def decode_token(token: str):
+    payload = decode_token_or_none(token)
+
+    if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
+            detail="Invalid or expired token"
         )
+
+    return payload

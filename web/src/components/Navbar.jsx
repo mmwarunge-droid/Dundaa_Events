@@ -2,15 +2,15 @@ import React from "react";
 import { Link } from "react-router-dom";
 
 import Logo from "./Logo";
+import NotificationBell from "./NotificationBell";
 import { useAuth } from "../context/AuthContext";
 
-/*
-Navbar
-------
-Phase 2 update:
-- Admin users now see an Admin link
-- Structure remains backward-compatible for standard users
-*/
+const CONTACT = {
+  phoneDisplay: "+254 713 722 822",
+  phoneHref: "tel:+254713722822",
+  email: "hello@dundaa.com",
+  emailHref: "mailto:hello@dundaa.com"
+};
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -18,30 +18,55 @@ export default function Navbar() {
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
   return (
-    <nav className="nav">
-      <div className="container nav-inner">
-        <Link to="/" className="nav-brand" aria-label="Dundaa home">
-          <Logo />
-        </Link>
+    <>
+      <div className="top-strip">
+        <div className="container top-strip-inner" style={{ justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
+            <span><strong>Secure bookings</strong></span>
+            <span className="top-strip-pill">Fast checkout</span>
+            <span className="top-strip-pill">Trusted payments</span>
+            <span className="top-strip-pill">Discover what’s happening near you</span>
+          </div>
 
-        <div className="nav-links">
-          {user && <Link to="/events">Events</Link>}
-          {user && <Link to="/dashboard">Dashboard</Link>}
-          {user && <Link to="/profile">Profile</Link>}
-          {isAdmin && <Link to="/admin">Admin</Link>}
-
-          {!user ? (
-            <>
-              <Link to="/login">Login</Link>
-              <Link to="/signup">Signup</Link>
-            </>
-          ) : (
-            <button className="btn btn-secondary" onClick={logout}>
-              Logout
-            </button>
-          )}
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+            <a href={CONTACT.phoneHref} style={{ color: "#ffffff" }}>
+              {CONTACT.phoneDisplay}
+            </a>
+            <a href={CONTACT.emailHref} style={{ color: "#ffffff" }}>
+              {CONTACT.email}
+            </a>
+          </div>
         </div>
       </div>
-    </nav>
+
+      <nav className="nav">
+        <div className="container nav-inner">
+          <Link to="/" className="nav-brand" aria-label="Dundaa home">
+            <Logo />
+          </Link>
+
+          <div className="nav-links">
+            <Link to="/events">Events</Link>
+            <Link to="/campaigns">Fundraisers</Link>
+
+            {user && <Link to="/dashboard">Dashboard</Link>}
+            {user && <Link to="/profile">Profile</Link>}
+            {isAdmin && <Link to="/admin">Admin</Link>}
+            {user && <NotificationBell />}
+
+            {!user ? (
+              <>
+                <Link to="/login">Login</Link>
+                <Link className="btn" to="/signup">Create account</Link>
+              </>
+            ) : (
+              <button className="btn btn-secondary" onClick={logout}>
+                Logout
+              </button>
+            )}
+          </div>
+        </div>
+      </nav>
+    </>
   );
 }
