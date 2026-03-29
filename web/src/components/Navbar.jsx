@@ -27,15 +27,6 @@ export default function Navbar() {
             <span className="top-strip-pill">Trusted payments</span>
             <span className="top-strip-pill">Discover what’s happening near you</span>
           </div>
-
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-            <a href={CONTACT.phoneHref} style={{ color: "#ffffff" }}>
-              {CONTACT.phoneDisplay}
-            </a>
-            <a href={CONTACT.emailHref} style={{ color: "#ffffff" }}>
-              {CONTACT.email}
-            </a>
-          </div>
         </div>
       </div>
 
