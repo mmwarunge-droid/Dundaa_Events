@@ -30,7 +30,10 @@ app = FastAPI(title="Dundaa API", version="0.7.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",  # local frontend
+        "https://dundaa-events-frontend.onrender.com",  # deployed frontend
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
