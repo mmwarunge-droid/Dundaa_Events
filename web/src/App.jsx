@@ -6,6 +6,7 @@ import Navbar from "./components/Navbar";
 import NotificationConsentModal from "./components/NotificationConsentModal";
 import ProtectedRoute from "./components/ProtectedRoute";
 import WelcomeMessage from "./components/WelcomeMessage";
+import { Analytics } from "@vercel/analytics/react";
 
 import { useAuth } from "./context/AuthContext";
 
@@ -110,6 +111,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppShell />
+      <Analytics />
     </BrowserRouter>
   );
 }
