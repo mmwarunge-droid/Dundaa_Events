@@ -141,5 +141,13 @@ export function NotificationsProvider({ children }) {
 }
 
 export function useNotifications() {
-  return useContext(NotificationsContext);
+  const context = useContext(NotificationsContext);
+
+  if (!context) {
+    throw new Error(
+      "useNotifications must be used within a NotificationsProvider"
+    );
+  }
+
+  return context;
 }
