@@ -33,6 +33,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",  # local frontend
         "https://dundaa-events-frontend.onrender.com",  # deployed frontend
+        "https://dundaaevents.com",
+        "https://www.dundaaevents.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],

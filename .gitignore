@@ -39,3 +39,5 @@ uploads/
 # Coverage
 .coverage
 htmlcov/
+.vercel
+.env*.local
