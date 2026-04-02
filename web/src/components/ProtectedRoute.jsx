@@ -1,18 +1,19 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 /*
 ProtectedRoute
 --------------
-This version waits for auth bootstrap to finish before deciding whether
-to redirect or render protected content.
+Wait for auth bootstrap to finish, then allow access only when a valid
+authenticated user exists.
 
-Without this, the UI can briefly mis-handle routes while the profile request
-is still in flight.
+If the user is not authenticated, redirect to login and preserve the
+attempted destination.
 */
 
 export default function ProtectedRoute({ children }) {
-  const { token, authLoading } = useAuth();
+  const { user, authLoading } = useAuth();
+  const location = useLocation();
 
   if (authLoading) {
     return (
@@ -22,5 +23,15 @@ export default function ProtectedRoute({ children }) {
     );
   }
 
-  return token ? children : <Navigate to="/login" replace />;
+  if (!user) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: location }}
+      />
+    );
+  }
+
+  return children;
 }

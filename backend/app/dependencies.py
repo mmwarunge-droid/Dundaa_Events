@@ -99,7 +99,18 @@ def get_optional_current_user(
     Public routes can use this to optionally personalize results when a valid
     token exists, while still allowing guest access.
     """
-    return _resolve_user_from_token(token, db)
+    if not token:
+        return None
+
+    try:
+        return _resolve_user_from_token(token, db)
+    except HTTPException as exc:
+        if exc.status_code in {
+            status.HTTP_401_UNAUTHORIZED,
+            status.HTTP_403_FORBIDDEN,
+        }:
+            return None
+        raise
 
 
 def get_current_admin_user(

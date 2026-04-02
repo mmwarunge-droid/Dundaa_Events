@@ -1,18 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import api from "../api/client";
 
-/*
-AuthContext
------------
-Centralized auth + session bootstrap state.
-
-This version supports:
-- token persistence
-- user bootstrap from /profile
-- admin role awareness via profile data
-- logout clearing auth state immediately
-*/
-
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -58,6 +46,18 @@ export function AuthProvider({ children }) {
       throw err;
     }
   };
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      logout();
+    };
+
+    window.addEventListener("dundaa:unauthorized", handleUnauthorized);
+
+    return () => {
+      window.removeEventListener("dundaa:unauthorized", handleUnauthorized);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

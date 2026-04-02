@@ -1,12 +1,15 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
+
+  const from = location.state?.from?.pathname || "/events";
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -25,7 +28,7 @@ export default function LoginPage() {
       });
 
       login(res.data.access_token, "Welcome back to Dundaa");
-      navigate("/events");
+      navigate(from, { replace: true });
     } catch (err) {
       console.error("Login failed:", err);
       setError(
