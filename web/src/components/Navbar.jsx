@@ -23,9 +23,6 @@ export default function Navbar() {
         <div className="container top-strip-inner" style={{ justifyContent: "space-between" }}>
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
             <span><strong>Secure bookings</strong></span>
-            <span className="top-strip-pill">Fast checkout</span>
-            <span className="top-strip-pill">Trusted payments</span>
-            <span className="top-strip-pill">Discover what’s happening near you</span>
           </div>
         </div>
       </div>
