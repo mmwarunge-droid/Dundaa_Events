@@ -7,18 +7,25 @@ from backend.app.schemas.comment import CommentResponse
 from backend.app.schemas.rating import RatingResponse
 
 EventCategory = Literal[
-    "Club",
+    "Nightlife",
     "Church",
     "Outdoor Activities",
     "Restaurant",
     "Indoor Activities",
+    "Shopping",
     "Corporate",
     "Hobbies",
+    "Music",
+    "Arts and Culture",
+    "Movies and Theater",
     "Sports",
     "Restaurants and Cafes",
     "Club Events",
     "Church Events",
     "Corporate Events",
+    "Business Networking",
+    "Board Game Nights",
+    "Hobbies and Interest Groups",
 ]
 
 PaymentMethod = Literal["MoMo", "Bank", "Card", "M-Pesa"]

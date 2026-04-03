@@ -9,9 +9,9 @@ class Transaction(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
 
-    tx_type = Column(String, nullable=False)
+    tx_type = Column(String, nullable=False, index=True)
     provider = Column(String, nullable=False)
 
     gross_amount = Column(Float, nullable=False)
@@ -19,9 +19,12 @@ class Transaction(Base):
     platform_fee_amount = Column(Float, default=0.0)
     influencer_amount = Column(Float, default=0.0)
 
-    status = Column(String, default="pending")
+    status = Column(String, default="pending", index=True)
+    reference = Column(String, nullable=True, index=True)
+    destination_reference = Column(String, nullable=True)
 
-    reference = Column(String, nullable=True)
+    mfa_required = Column(String, nullable=True)   # email | sms
+    mfa_verified_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

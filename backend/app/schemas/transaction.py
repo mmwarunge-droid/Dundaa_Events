@@ -1,12 +1,9 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TransactionResponse(BaseModel):
-    """
-    Read-only transaction payload returned to clients.
-    """
     id: int
     tx_type: str
     provider: str
@@ -16,7 +13,34 @@ class TransactionResponse(BaseModel):
     influencer_amount: float
     status: str
     reference: str | None = None
+    destination_reference: str | None = None
+    mfa_required: str | None = None
+    mfa_verified_at: datetime | None = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class WithdrawalInitiateRequest(BaseModel):
+    amount: float = Field(..., gt=0)
+    provider: str
+    destination_reference: str
+    mfa_method: str  # email | sms
+
+
+class WithdrawalInitiateResponse(BaseModel):
+    transaction_id: int
+    challenge_id: int
+    message: str
+
+
+class WithdrawalVerifyRequest(BaseModel):
+    challenge_id: int
+    code: str
+
+
+class WithdrawalVerifyResponse(BaseModel):
+    success: bool
+    transaction_id: int
+    status: str

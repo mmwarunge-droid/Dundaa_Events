@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
@@ -10,6 +10,7 @@ from backend.app.schemas.auth import (
     AuthStatusResponse,
     LoginRequest,
     ReactivateRequest,
+    SessionUserResponse,
     SignupRequest,
     TokenResponse,
 )
@@ -17,23 +18,36 @@ from backend.app.security import create_access_token, hash_password, verify_pass
 
 router = APIRouter(tags=["Auth"])
 
+ADMIN_ROLES = {"admin", "super_admin", "admin_kyc", "admin_analytics", "admin_operations"}
+
 
 def calculate_age_years(date_of_birth: date) -> int:
-    """
-    Calculate age in completed years.
-    """
     today = date.today()
     years = today.year - date_of_birth.year
     before_birthday = (today.month, today.day) < (date_of_birth.month, date_of_birth.day)
-
     return years - 1 if before_birthday else years
+
+
+def to_session_user(user: User) -> SessionUserResponse:
+    return SessionUserResponse(
+        id=user.id,
+        email=user.email,
+        username=user.username,
+        role=user.role,
+        notification_consent=user.notification_consent,
+        promotional_updates_consent=user.promotional_updates_consent,
+        influencer_tier=user.influencer_tier,
+        wallet_balance=user.wallet_balance,
+    )
+
+
+def issue_token_response(user: User) -> TokenResponse:
+    token = create_access_token(str(user.id))
+    return TokenResponse(access_token=token, user=to_session_user(user))
 
 
 @router.post("/signup", response_model=TokenResponse)
 def signup(payload: SignupRequest, db: Session = Depends(get_db)):
-    """
-    Register a new user and return an access token.
-    """
     age = calculate_age_years(payload.date_of_birth)
     if age < 18:
         raise HTTPException(
@@ -46,10 +60,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
         if existing_email.account_status == "deactivated":
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    "Your account was previously deactivated. "
-                    "Would you like to reactivate it?"
-                ),
+                detail="Your account was previously deactivated. Would you like to reactivate it?",
             )
         raise HTTPException(status_code=400, detail="Email already exists")
 
@@ -66,21 +77,18 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
         role="user",
         account_status="active",
         notification_consent=None,
+        promotional_updates_consent=None,
     )
 
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(str(user.id))
-    return TokenResponse(access_token=token)
+    return issue_token_response(user)
 
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    """
-    Authenticate using email or username.
-    """
     user = db.query(User).filter(
         or_(
             User.email == payload.identifier,
@@ -116,19 +124,17 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         user.latitude = payload.latitude
         user.longitude = payload.longitude
         user.location_name = payload.location_name
-        db.add(user)
-        db.commit()
-        db.refresh(user)
 
-    token = create_access_token(str(user.id))
-    return TokenResponse(access_token=token)
+    user.last_login_at = datetime.now(timezone.utc)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return issue_token_response(user)
 
 
-@router.post("/auth/reactivate", response_model=TokenResponse)
-def reactivate_account(payload: ReactivateRequest, db: Session = Depends(get_db)):
-    """
-    Reactivate a previously deactivated account and return a fresh token.
-    """
+@router.post("/admin/login", response_model=TokenResponse)
+def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(
         or_(
             User.email == payload.identifier,
@@ -137,39 +143,53 @@ def reactivate_account(payload: ReactivateRequest, db: Session = Depends(get_db)
     ).first()
 
     if not user or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if user.role not in ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    if user.account_status != "active":
+        raise HTTPException(status_code=403, detail="Admin account is not active")
+
+    user.last_login_at = datetime.now(timezone.utc)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return issue_token_response(user)
+
+
+@router.post("/auth/reactivate", response_model=TokenResponse)
+def reactivate_account(payload: ReactivateRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(
+        or_(
+            User.email == payload.identifier,
+            User.username == payload.identifier,
         )
+    ).first()
+
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if user.is_deleted or user.account_status == "deleted":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This account is no longer available.",
-        )
+        raise HTTPException(status_code=403, detail="This account is no longer available.")
 
     if user.account_status != "deactivated":
-        raise HTTPException(
-            status_code=400,
-            detail="This account does not require reactivation.",
-        )
+        raise HTTPException(status_code=400, detail="This account does not require reactivation.")
 
     user.account_status = "active"
     user.deactivated_at = None
+    user.last_login_at = datetime.now(timezone.utc)
 
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(str(user.id))
-    return TokenResponse(access_token=token)
+    return issue_token_response(user)
 
 
 @router.post("/auth/check-status", response_model=AuthStatusResponse)
 def check_auth_status(payload: ReactivateRequest, db: Session = Depends(get_db)):
-    """
-    Optional helper endpoint for frontend auth flows.
-    """
     user = db.query(User).filter(
         or_(
             User.email == payload.identifier,
@@ -178,10 +198,7 @@ def check_auth_status(payload: ReactivateRequest, db: Session = Depends(get_db))
     ).first()
 
     if not user or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if user.account_status == "deactivated":
         return AuthStatusResponse(
@@ -197,35 +214,3 @@ def check_auth_status(payload: ReactivateRequest, db: Session = Depends(get_db))
         can_reactivate=False,
         name=user.username,
     )
-
-
-@router.post("/auth/dev/promote-admin")
-def promote_user_to_admin(identifier: str, db: Session = Depends(get_db)):
-    """
-    DEVELOPMENT HELPER ONLY.
-
-    Promote an existing user to admin using email or username.
-    Remove this endpoint in production, or protect it properly.
-    """
-    user = db.query(User).filter(
-        or_(
-            User.email == identifier,
-            User.username == identifier,
-        )
-    ).first()
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    user.role = "admin"
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    return {
-        "message": "User promoted to admin successfully",
-        "user_id": user.id,
-        "email": user.email,
-        "username": user.username,
-        "role": user.role,
-    }

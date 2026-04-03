@@ -41,12 +41,14 @@ class Event(Base):
     approved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     is_live = Column(Boolean, nullable=False, default=True)
 
-    # Phase 1 discovery + sharing
     share_slug = Column(String, unique=True, index=True, nullable=True)
     share_click_count = Column(Integer, nullable=False, default=0)
     search_hit_count = Column(Integer, nullable=False, default=0)
 
-    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    featured_promo_image_url = Column(String, nullable=True)
+    featured_promo_click_url = Column(String, nullable=True)
+
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

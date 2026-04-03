@@ -769,3 +769,129 @@ img {
     text-align: center;
   }
 }
+/* =========================================
+   MOBILE CLEAN MODE (CRITICAL FIX)
+========================================= */
+
+@media (max-width: 600px) {
+
+  /* Reduce global spacing */
+  .container {
+    padding: 14px;
+  }
+
+  .page-section {
+    padding: 16px;
+  }
+
+  /* Reduce card heaviness */
+  .card,
+  .event-card,
+  .campaign-card,
+  .trust-card {
+    padding: 12px;
+    border-radius: 14px;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.06);
+  }
+
+  /* Reduce hero weight */
+  .market-hero-main {
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .market-hero-main h1 {
+    font-size: 1.6rem;
+  }
+
+  .market-hero-main p {
+    font-size: 0.92rem;
+  }
+
+  /* Simplify promo section */
+  .promo-ad {
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .promo-ad h2 {
+    font-size: 1.3rem;
+  }
+
+  .promo-ad-orb {
+    display: none; /* remove visual clutter */
+  }
+
+  /* Smaller buttons */
+  .btn {
+    padding: 10px 14px;
+    font-size: 0.9rem;
+  }
+
+  /* Inputs tighter */
+  .input,
+  .textarea,
+  .select {
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  /* Grid fix (CRITICAL) */
+  .grid-2,
+  .grid-3 {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  /* Event cards more compact */
+  .event-card-image,
+  .campaign-card-image {
+    height: 140px;
+    border-radius: 12px;
+  }
+
+  .card-title {
+    font-size: 1rem;
+  }
+
+  .card-copy {
+    font-size: 0.9rem;
+    min-height: auto;
+  }
+
+  /* Reduce nav clutter */
+  .nav-inner {
+    gap: 10px;
+  }
+
+  .nav-links {
+    gap: 8px;
+    font-size: 0.9rem;
+  }
+
+  .nav-logo {
+    transform: scale(1.2); /* reduce oversized logo */
+  }
+
+  /* Profile section fix */
+  .profile-avatar-frame {
+    width: 120px;
+    height: 120px;
+  }
+
+  .profile-crop-window {
+    width: 200px;
+    height: 200px;
+  }
+
+  /* Remove excessive shadows globally */
+  * {
+    box-shadow: none !important;
+  }
+
+  /* Restore light shadows only where needed */
+  .card,
+  .event-card {
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05) !important;
+  }
+}

@@ -376,3 +376,18 @@ def upload_kyc_document(
         "document_type": doc.document_type,
         "file_url": doc.file_url,
     }
+
+def get_user_kyc_gate_state(db: Session, user_id: int) -> str:
+    latest = (
+        db.query(KYCSubmission)
+        .filter(KYCSubmission.user_id == user_id)
+        .order_by(KYCSubmission.last_updated_at.desc())
+        .first()
+    )
+    if not latest:
+        return "in_progress"
+    if latest.status == "approved":
+        return "success"
+    if latest.status == "pending":
+        return "submitted_for_review"
+    return "in_progress"
