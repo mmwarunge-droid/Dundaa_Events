@@ -7,17 +7,26 @@ from app.dependencies import get_current_admin_user, get_db
 from app.models.event import Event
 from app.models.kyc_submission import KYCSubmission
 from app.models.user import User
+
 from app.schemas.admin import (
     AdminKycDocumentSummary,
     AdminKycHistoryItem,
     AdminKycReviewQueueItem,
+    AdminEventApproveRequest,
+    EventRejectionRequest,
 )
-from app.services.cache_service import cache_delete_prefix
-from app.schemas.event import EventResponse, AdminEventApproveRequest
+
+from app.schemas.event import EventResponse
 from app.schemas.kyc import KYCReviewRequest, KYCSubmissionResponse
+
+from app.services.cache_service import cache_delete_prefix
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
+
+# ----------------------------
+# Utility Functions
+# ----------------------------
 
 def should_expose_payment_link(event: Event) -> bool:
     return bool(
@@ -60,11 +69,11 @@ def build_document_summary(submission: KYCSubmission) -> AdminKycDocumentSummary
     business_supporting_docs_count = len(doc_types & business_doc_types)
 
     if has_identity_document and has_proof_of_address and has_selfie:
-      completeness_label = "good"
+        completeness_label = "good"
     elif has_identity_document or has_proof_of_address:
-      completeness_label = "partial"
+        completeness_label = "partial"
     else:
-      completeness_label = "weak"
+        completeness_label = "weak"
 
     return AdminKycDocumentSummary(
         total_documents=len(docs),
@@ -75,6 +84,10 @@ def build_document_summary(submission: KYCSubmission) -> AdminKycDocumentSummary
         completeness_label=completeness_label,
     )
 
+
+# ----------------------------
+# Event Management
+# ----------------------------
 
 @router.get("/events/pending", response_model=list[EventResponse])
 def list_pending_events(
@@ -99,10 +112,11 @@ def list_pending_events(
 
     return results
 
-@router.post("/admin/events/{event_id}/approve")
+
+@router.post("/events/{event_id}/approve")
 def approve_event(
     event_id: int,
-    payload: EventApprovalRequest,
+    payload: AdminEventApproveRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
@@ -123,6 +137,7 @@ def approve_event(
     db.commit()
     db.refresh(event)
 
+    # 🔥 Redis cache invalidation
     cache_delete_prefix("events:discover:")
 
     return {
@@ -130,7 +145,9 @@ def approve_event(
         "event_id": event.id,
         "approval_status": event.approval_status,
     }
-@router.post("/admin/events/{event_id}/reject")
+
+
+@router.post("/events/{event_id}/reject")
 def reject_event(
     event_id: int,
     payload: EventRejectionRequest,
@@ -152,6 +169,7 @@ def reject_event(
     db.commit()
     db.refresh(event)
 
+    # 🔥 Redis cache invalidation
     cache_delete_prefix("events:discover:")
 
     return {
@@ -160,6 +178,11 @@ def reject_event(
         "approval_status": event.approval_status,
         "rejection_reason": event.rejection_reason,
     }
+
+
+# ----------------------------
+# KYC Management
+# ----------------------------
 
 @router.get("/kyc/pending", response_model=list[KYCSubmissionResponse])
 def list_pending_kyc(
