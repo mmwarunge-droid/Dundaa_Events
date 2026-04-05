@@ -1,7 +1,7 @@
 # backend/scripts/bootstrap_admins.py
-from backend.app.db import SessionLocal
-from backend.app.models.user import User
-from backend.app.security import hash_password
+from app.db import SessionLocal
+from app.models.user import User
+from app.security import hash_password
 
 ADMINS = [
     {

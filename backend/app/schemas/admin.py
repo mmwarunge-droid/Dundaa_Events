@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from backend.app.schemas.kyc import KYCDocumentResponse
+from app.schemas.kyc import KYCDocumentResponse
 
 
 class AdminKycDocumentSummary(BaseModel):

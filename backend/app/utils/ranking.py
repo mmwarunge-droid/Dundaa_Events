@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from math import radians, sin, cos, sqrt, atan2
 from typing import Optional, Tuple
 
-from backend.app.models.event import Event
+from app.models.event import Event
 
 
 def safe_lower(value: Optional[str]) -> str:

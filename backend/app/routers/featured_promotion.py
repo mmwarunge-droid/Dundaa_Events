@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.app.dependencies import get_current_admin_user, get_db
-from backend.app.models.featured_promotion import FeaturedPromotion
-from backend.app.models.user import User
-from backend.app.schemas.featured_promotion import (
+from app.dependencies import get_current_admin_user, get_db
+from app.models.featured_promotion import FeaturedPromotion
+from app.models.user import User
+from app.schemas.featured_promotion import (
     FeaturedPromotionResponse,
     FeaturedPromotionUpdateRequest,
 )
-from backend.app.services.cache_service import cache_get, cache_set, cache_delete
+from app.services.cache_service import cache_get, cache_set, cache_delete
 
 router = APIRouter(prefix="/featured-promotion", tags=["Featured Promotion"])
 

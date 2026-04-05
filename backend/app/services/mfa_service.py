@@ -4,10 +4,10 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from backend.app.config import settings
-from backend.app.models.mfa_challenge import MFAChallenge
-from backend.app.models.user import User
-from backend.app.services.email_service import send_email
+from app.config import settings
+from app.models.mfa_challenge import MFAChallenge
+from app.models.user import User
+from app.services.email_service import send_email
 
 
 def generate_otp() -> str:

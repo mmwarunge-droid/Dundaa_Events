@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, func
 
-from backend.app.db import Base
+from app.db import Base
 
 
 class ContactMessage(Base):

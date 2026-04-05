@@ -2,17 +2,17 @@ from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from backend.app.services.notifications import create_notification
+from app.services.notifications import create_notification
 
-from backend.app.dependencies import get_current_admin_user, get_current_user, get_db
-from backend.app.models.coin_purchase import CoinPurchase
-from backend.app.models.contestant import Contestant
-from backend.app.models.kyc_submission import KYCSubmission
-from backend.app.models.transaction import Transaction
-from backend.app.models.user import User
-from backend.app.models.vote_transaction import VoteTransaction
-from backend.app.models.voting_campaign import VotingCampaign
-from backend.app.schemas.voting import (
+from app.dependencies import get_current_admin_user, get_current_user, get_db
+from app.models.coin_purchase import CoinPurchase
+from app.models.contestant import Contestant
+from app.models.kyc_submission import KYCSubmission
+from app.models.transaction import Transaction
+from app.models.user import User
+from app.models.vote_transaction import VoteTransaction
+from app.models.voting_campaign import VotingCampaign
+from app.schemas.voting import (
     BuyCoinsRequest,
     BuyCoinsResponse,
     ContestantJoinRequest,
@@ -26,7 +26,7 @@ from backend.app.schemas.voting import (
     VotingCampaignResponse,
     WalletResponse,
 )
-from backend.app.utils.payments import generate_reference
+from app.utils.payments import generate_reference
 
 router = APIRouter(tags=["Voting"])
 

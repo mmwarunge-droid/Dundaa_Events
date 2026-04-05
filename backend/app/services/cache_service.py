@@ -6,7 +6,7 @@ try:
 except ImportError:
     redis = None
 
-from backend.app.config import settings
+from app.config import settings
 
 redis_client = None
 

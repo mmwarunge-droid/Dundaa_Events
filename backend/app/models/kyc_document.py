@@ -1,7 +1,7 @@
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import relationship
 
-from backend.app.db import Base
+from app.db import Base
 
 
 class KYCDocument(Base):

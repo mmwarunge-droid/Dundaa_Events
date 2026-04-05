@@ -10,9 +10,9 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.app.dependencies import get_current_user, get_db
-from backend.app.models.user import User
-from backend.app.schemas.user import (
+from app.dependencies import get_current_user, get_db
+from app.models.user import User
+from app.schemas.user import (
     UserResponse,
     ProfileUpdateRequest,
     NotificationConsentUpdate,

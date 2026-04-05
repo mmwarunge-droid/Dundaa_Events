@@ -1,6 +1,6 @@
 from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, func
 
-from backend.app.db import Base
+from app.db import Base
 
 
 class FeaturedPromotion(Base):

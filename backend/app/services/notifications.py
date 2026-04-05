@@ -2,10 +2,10 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from backend.app.models.kyc_submission import KYCSubmission
-from backend.app.models.notification import Notification
-from backend.app.models.user import User
-from backend.app.services.websocket_manager import notification_ws_manager
+from app.models.kyc_submission import KYCSubmission
+from app.models.notification import Notification
+from app.models.user import User
+from app.services.websocket_manager import notification_ws_manager
 
 
 async def create_notification(

@@ -1,7 +1,7 @@
 import smtplib
 from email.mime.text import MIMEText
 
-from backend.app.config import settings
+from app.config import settings
 
 
 def send_email(to_email: str, subject: str, body: str) -> None:

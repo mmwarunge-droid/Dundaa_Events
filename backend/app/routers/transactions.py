@@ -4,17 +4,17 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from backend.app.dependencies import get_db, get_current_user
-from backend.app.models.transaction import Transaction
-from backend.app.models.user import User
-from backend.app.schemas.transaction import (
+from app.dependencies import get_db, get_current_user
+from app.models.transaction import Transaction
+from app.models.user import User
+from app.schemas.transaction import (
     TransactionResponse,
     WithdrawalInitiateRequest,
     WithdrawalInitiateResponse,
     WithdrawalVerifyRequest,
     WithdrawalVerifyResponse,
 )
-from backend.app.services.mfa_service import create_mfa_challenge, verify_mfa_challenge
+from app.services.mfa_service import create_mfa_challenge, verify_mfa_challenge
 
 router = APIRouter(tags=["Transactions"])
 

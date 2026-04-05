@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 
-from backend.app.dependencies import get_db, get_current_user
-from backend.app.models.user import User
-from backend.app.models.event import Event
-from backend.app.schemas.event import EventResponse
-from backend.app.utils.ranking import average_rating, ranking_score
+from app.dependencies import get_db, get_current_user
+from app.models.user import User
+from app.models.event import Event
+from app.schemas.event import EventResponse
+from app.utils.ranking import average_rating, ranking_score
 
 router = APIRouter(tags=["Recommendations"])
 

@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from backend.app.config import settings
-from backend.app.db import Base
-from backend.app.dependencies import get_db
-from backend.app.models.contact_message import ContactMessage
-from backend.app.schemas.contact import ContactFormRequest, ContactFormResponse
-from backend.app.services.email_service import send_email
+from app.config import settings
+from app.db import Base
+from app.dependencies import get_db
+from app.models.contact_message import ContactMessage
+from app.schemas.contact import ContactFormRequest, ContactFormResponse
+from app.services.email_service import send_email
 
 router = APIRouter(prefix="/contact", tags=["Contact"])
 
