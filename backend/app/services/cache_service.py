@@ -1,13 +1,16 @@
 import json
 from typing import Any
 
-import redis
+try:
+    import redis
+except ImportError:
+    redis = None
 
 from backend.app.config import settings
 
 redis_client = None
 
-if settings.REDIS_URL:
+if settings.REDIS_URL and redis:
     redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
 
 
