@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import useToast from "../hooks/useToast";
 
 import CtaGroup from "../components/ui/CtaGroup";
 import MetricCard from "../components/ui/MetricCard";
@@ -17,7 +18,8 @@ function resolveProfileImage(url) {
 }
 
 export default function ProfilePage() {
-  const { user, setUser, logout } = useAuth();
+  const { user, setUser, logout, submitPromotionalConsent } = useAuth();
+  const toast = useToast();
 
   const fileInputRef = useRef(null);
   const imageRef = useRef(null);
@@ -88,6 +90,7 @@ export default function ProfilePage() {
 
     if (!file.type.startsWith("image/")) {
       setError("Please choose an image file.");
+      toast.error("Please choose an image file.");
       return;
     }
 
@@ -202,10 +205,13 @@ export default function ProfilePage() {
 
       setUser(res.data);
       setSuccess("Profile updated successfully.");
+      toast.success("Profile updated successfully.");
       resetCropState();
     } catch (err) {
       console.error("Profile update failed:", err);
-      setError(err?.response?.data?.detail || "Failed to update profile.");
+      const msg = err?.response?.data?.detail || "Failed to update profile.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -220,10 +226,13 @@ export default function ProfilePage() {
       const res = await api.delete("/profile/photo");
       setUser(res.data);
       setSuccess("Profile photo removed.");
+      toast.success("Profile photo removed.");
       resetCropState();
     } catch (err) {
       console.error("Delete photo failed:", err);
-      setError(err?.response?.data?.detail || "Failed to remove profile photo.");
+      const msg = err?.response?.data?.detail || "Failed to remove profile photo.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setDeletingPhoto(false);
     }
@@ -237,10 +246,23 @@ export default function ProfilePage() {
 
     try {
       await api.post("/profile/account-status", { action: "delete" });
+      toast.success("Account deleted successfully.");
       logout();
     } catch (err) {
       console.error("Delete account failed:", err);
-      setError(err?.response?.data?.detail || "Failed to delete account.");
+      const msg = err?.response?.data?.detail || "Failed to delete account.";
+      setError(msg);
+      toast.error(msg);
+    }
+  };
+
+  const handlePromotionalConsentToggle = async (e) => {
+    try {
+      const nextValue = e.target.checked;
+      await submitPromotionalConsent(nextValue);
+      toast.success("Promotional preference updated.");
+    } catch (err) {
+      toast.error("Failed to update promotional preference.");
     }
   };
 
@@ -258,7 +280,7 @@ export default function ProfilePage() {
         <div>
           <h1 style={{ margin: 0 }}>My Profile</h1>
           <p style={{ color: "var(--muted)", marginTop: 8 }}>
-            Manage your photo, account details, and location preferences.
+            Manage your photo, account details, and privacy preferences.
           </p>
         </div>
       </section>
@@ -290,6 +312,20 @@ export default function ProfilePage() {
       </div>
 
       <PageSection
+        title="Privacy Preferences"
+        subtitle="Control the promotional updates Dundaa may send you."
+      >
+        <label style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <input
+            type="checkbox"
+            checked={Boolean(user.promotional_updates_consent)}
+            onChange={handlePromotionalConsentToggle}
+          />
+          <span>Allow Dundaa promotional updates</span>
+        </label>
+      </PageSection>
+
+      <PageSection
         title="Profile Photo"
         subtitle="Upload a clear image to personalize your Dundaa presence."
       >
@@ -301,6 +337,7 @@ export default function ProfilePage() {
                   src={previewImage}
                   alt="Profile preview"
                   className="profile-avatar-image"
+                  ref={imageRef}
                 />
               ) : currentProfileImage ? (
                 <img
@@ -354,26 +391,26 @@ export default function ProfilePage() {
                 </p>
               </div>
 
-              <div className="profile-crop-preview">
-                <div
-                  className="profile-crop-window"
-                  onPointerDown={handlePointerDown}
-                >
-                  <img
-                    ref={imageRef}
-                    src={previewImage}
-                    alt="Crop preview"
-                    className="profile-crop-image profile-crop-image-draggable"
-                    style={{
-                      transform: `translate(${cropOffset.x}px, ${cropOffset.y}px) scale(${cropScale})`
-                    }}
-                    draggable={false}
-                  />
-                </div>
+              <div
+                className="profile-crop-stage"
+                onPointerDown={handlePointerDown}
+                style={{ overflow: "hidden", position: "relative", touchAction: "none" }}
+              >
+                <img
+                  ref={imageRef}
+                  src={previewImage}
+                  alt="Crop preview"
+                  style={{
+                    transform: `translate(${cropOffset.x}px, ${cropOffset.y}px) scale(${cropScale})`,
+                    transformOrigin: "top left",
+                    userSelect: "none",
+                    pointerEvents: "none"
+                  }}
+                />
               </div>
 
-              <div className="profile-zoom-control">
-                <label>Zoom</label>
+              <div className="grid" style={{ gap: 8 }}>
+                <label style={{ fontWeight: 700 }}>Zoom</label>
                 <input
                   type="range"
                   min="0.5"
@@ -383,94 +420,67 @@ export default function ProfilePage() {
                   onChange={(e) => setCropScale(Number(e.target.value))}
                 />
               </div>
-
-              <CtaGroup>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={resetCropState}
-                >
-                  Cancel Crop
-                </button>
-              </CtaGroup>
             </div>
           ) : null}
 
-          <div className="grid grid-2" style={{ marginTop: 24 }}>
-            <div className="grid" style={{ gap: 8 }}>
-              <label style={{ fontWeight: 700 }}>Username</label>
-              <input
-                className="input"
-                value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })}
-                required
-              />
-            </div>
+          <div className="grid grid-2" style={{ gap: 16, marginTop: 24 }}>
+            <input
+              className="input"
+              placeholder="Username"
+              value={form.username}
+              onChange={(e) => setForm({ ...form, username: e.target.value })}
+              required
+            />
 
-            <div className="grid" style={{ gap: 8 }}>
-              <label style={{ fontWeight: 700 }}>Contact Info</label>
-              <input
-                className="input"
-                placeholder="Phone or public contact details"
-                value={form.contact_info}
-                onChange={(e) => setForm({ ...form, contact_info: e.target.value })}
-              />
-            </div>
+            <input
+              className="input"
+              placeholder="Contact info"
+              value={form.contact_info}
+              onChange={(e) => setForm({ ...form, contact_info: e.target.value })}
+            />
 
-            <div className="grid" style={{ gap: 8 }}>
-              <label style={{ fontWeight: 700 }}>Gender</label>
-              <select
-                className="select"
-                value={form.gender}
-                onChange={(e) => setForm({ ...form, gender: e.target.value })}
-              >
-                <option value="">Select gender</option>
-                <option value="Female">Female</option>
-                <option value="Male">Male</option>
-                <option value="Other">Other</option>
-                <option value="Prefer not to say">Prefer not to say</option>
-              </select>
-            </div>
+            <select
+              className="select"
+              value={form.gender}
+              onChange={(e) => setForm({ ...form, gender: e.target.value })}
+            >
+              <option value="">Select gender</option>
+              <option value="Female">Female</option>
+              <option value="Male">Male</option>
+              <option value="Other">Other</option>
+              <option value="Prefer not to say">Prefer not to say</option>
+            </select>
 
-            <div className="grid" style={{ gap: 8 }}>
-              <label style={{ fontWeight: 700 }}>Location Name</label>
-              <input
-                className="input"
-                placeholder="e.g. Nairobi"
-                value={form.location_name}
-                onChange={(e) => setForm({ ...form, location_name: e.target.value })}
-              />
-            </div>
+            <input
+              className="input"
+              placeholder="Location name"
+              value={form.location_name}
+              onChange={(e) => setForm({ ...form, location_name: e.target.value })}
+            />
 
-            <div className="grid" style={{ gap: 8 }}>
-              <label style={{ fontWeight: 700 }}>Latitude</label>
-              <input
-                className="input"
-                placeholder="Latitude"
-                value={form.latitude}
-                onChange={(e) => setForm({ ...form, latitude: e.target.value })}
-              />
-            </div>
+            <input
+              className="input"
+              placeholder="Latitude"
+              value={form.latitude}
+              onChange={(e) => setForm({ ...form, latitude: e.target.value })}
+            />
 
-            <div className="grid" style={{ gap: 8 }}>
-              <label style={{ fontWeight: 700 }}>Longitude</label>
-              <input
-                className="input"
-                placeholder="Longitude"
-                value={form.longitude}
-                onChange={(e) => setForm({ ...form, longitude: e.target.value })}
-              />
-            </div>
+            <input
+              className="input"
+              placeholder="Longitude"
+              value={form.longitude}
+              onChange={(e) => setForm({ ...form, longitude: e.target.value })}
+            />
           </div>
 
-          <CtaGroup style={{ marginTop: 24 }}>
+          <CtaGroup style={{ marginTop: 16 }}>
             <button className="btn" type="submit" disabled={saving}>
               {saving ? "Saving..." : "Save Profile"}
             </button>
 
             <button
-              type="button"
               className="btn btn-secondary"
+              type="button"
               onClick={handleDeleteAccount}
             >
               Delete Account

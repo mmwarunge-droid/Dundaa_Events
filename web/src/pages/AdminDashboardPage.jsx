@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import api from "../api/client";
+import useToast from "../hooks/useToast";
 
 import CtaGroup from "../components/ui/CtaGroup";
 import EmptyState from "../components/ui/EmptyState";
+import MetricCard from "../components/ui/MetricCard";
 import PageSection from "../components/ui/PageSection";
 import StatusBanner from "../components/ui/StatusBanner";
 
@@ -66,10 +68,25 @@ function DocumentSummaryCard({ summary }) {
 }
 
 export default function AdminDashboardPage() {
+  const toast = useToast();
+
   const [pendingEvents, setPendingEvents] = useState([]);
   const [kycQueue, setKycQueue] = useState([]);
   const [expandedKycUserId, setExpandedKycUserId] = useState(null);
   const [kycFilter, setKycFilter] = useState("all");
+  const [analytics, setAnalytics] = useState(null);
+
+  const [featuredPromotion, setFeaturedPromotion] = useState({
+    image_url: "",
+    click_url: "",
+    title: "",
+    text: ""
+  });
+
+  const [logFile, setLogFile] = useState(null);
+  const [logKeyword, setLogKeyword] = useState("FAILED LOGIN");
+  const [logResults, setLogResults] = useState([]);
+  const [analyzingLogs, setAnalyzingLogs] = useState(false);
 
   const [error, setError] = useState("");
   const [actionLoadingKey, setActionLoadingKey] = useState("");
@@ -80,9 +97,11 @@ export default function AdminDashboardPage() {
     try {
       setError("");
 
-      const [eventRes, kycQueueRes] = await Promise.all([
+      const [eventRes, kycQueueRes, analyticsRes, promoRes] = await Promise.all([
         api.get("/admin/events/pending"),
-        api.get("/admin/kyc/review-queue")
+        api.get("/admin/kyc/review-queue"),
+        api.get("/admin/analytics/summary"),
+        api.get("/featured-promotion/active")
       ]);
 
       const eventItems = eventRes.data || [];
@@ -90,6 +109,16 @@ export default function AdminDashboardPage() {
 
       setPendingEvents(eventItems);
       setKycQueue(kycItems);
+      setAnalytics(analyticsRes.data || null);
+
+      if (promoRes.data) {
+        setFeaturedPromotion({
+          image_url: promoRes.data.image_url || "",
+          click_url: promoRes.data.click_url || "",
+          title: promoRes.data.title || "",
+          text: promoRes.data.text || ""
+        });
+      }
 
       const nextForms = {};
       eventItems.forEach((event) => {
@@ -105,9 +134,10 @@ export default function AdminDashboardPage() {
       setApprovalForms(nextForms);
     } catch (err) {
       console.error("Failed to load admin dashboard:", err);
-      setError(
-        err?.response?.data?.detail || "Failed to load admin review queues."
-      );
+      const msg =
+        err?.response?.data?.detail || "Failed to load admin review queues.";
+      setError(msg);
+      toast.error(msg);
     }
   };
 
@@ -134,9 +164,12 @@ export default function AdminDashboardPage() {
         review_notes: "Approved by admin"
       });
       await load();
+      toast.success("KYC approved successfully.");
     } catch (err) {
       console.error("Failed to approve KYC:", err);
-      setError(err?.response?.data?.detail || "Failed to approve KYC.");
+      const msg = err?.response?.data?.detail || "Failed to approve KYC.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setActionLoadingKey("");
     }
@@ -154,9 +187,12 @@ export default function AdminDashboardPage() {
         review_notes: notes
       });
       await load();
+      toast.success("KYC rejected successfully.");
     } catch (err) {
       console.error("Failed to reject KYC:", err);
-      setError(err?.response?.data?.detail || "Failed to reject KYC.");
+      const msg = err?.response?.data?.detail || "Failed to reject KYC.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setActionLoadingKey("");
     }
@@ -186,13 +222,15 @@ export default function AdminDashboardPage() {
       });
 
       await load();
+      toast.success("Event approved successfully.");
     } catch (err) {
       console.error("Failed to approve event:", err);
-      setError(
+      const msg =
         err?.response?.data?.detail ||
-          err?.message ||
-          "Failed to approve event."
-      );
+        err?.message ||
+        "Failed to approve event.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setActionLoadingKey("");
     }
@@ -210,17 +248,66 @@ export default function AdminDashboardPage() {
         review_notes: notes
       });
       await load();
+      toast.success("Event rejected successfully.");
     } catch (err) {
       console.error("Failed to reject event:", err);
-      setError(err?.response?.data?.detail || "Failed to reject event.");
+      const msg = err?.response?.data?.detail || "Failed to reject event.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setActionLoadingKey("");
     }
   };
 
-  const sortedKycQueue = useMemo(() => {
-    return [...kycQueue];
-  }, [kycQueue]);
+  const handleSaveFeaturedPromotion = async (e) => {
+    e.preventDefault();
+
+    try {
+      await api.put("/featured-promotion/active", featuredPromotion);
+      toast.success("Featured promotion updated.");
+      await load();
+    } catch (err) {
+      console.error("Failed to update featured promotion:", err);
+      const msg = err?.response?.data?.detail || "Failed to update featured promotion.";
+      setError(msg);
+      toast.error(msg);
+    }
+  };
+
+  const handleAnalyzeLogs = async (e) => {
+    e.preventDefault();
+    if (!logFile) {
+      toast.error("Please choose a log file first.");
+      return;
+    }
+
+    try {
+      setAnalyzingLogs(true);
+
+      const formData = new FormData();
+      formData.append("file", logFile);
+
+      const res = await api.post(
+        `/admin/logs/analyze?keyword=${encodeURIComponent(logKeyword || "")}`,
+        formData,
+        {
+          headers: { "Content-Type": "multipart/form-data" }
+        }
+      );
+
+      setLogResults(res.data.items || []);
+      toast.success(`Log analysis complete. ${res.data.matches || 0} matches found.`);
+    } catch (err) {
+      console.error("Log analysis failed:", err);
+      const msg = err?.response?.data?.detail || "Failed to analyze logs.";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setAnalyzingLogs(false);
+    }
+  };
+
+  const sortedKycQueue = useMemo(() => [...kycQueue], [kycQueue]);
 
   const filteredKycQueue = useMemo(() => {
     switch (kycFilter) {
@@ -268,7 +355,7 @@ export default function AdminDashboardPage() {
         <div>
           <h1 style={{ margin: 0 }}>Admin Review Portal</h1>
           <p style={{ color: "var(--muted)", marginTop: 8 }}>
-            Review KYC attempts, validate documents, and approve ticketed events.
+            Review KYC, manage events, update promotions, and analyze security logs.
           </p>
         </div>
 
@@ -280,6 +367,105 @@ export default function AdminDashboardPage() {
       {error ? (
         <StatusBanner variant="error" title="Admin issue" message={error} />
       ) : null}
+
+      {analytics ? (
+        <div className="grid grid-4">
+          <MetricCard title="Users" value={analytics.users_total} description="Total platform users" />
+          <MetricCard title="Events" value={analytics.events_total} description="Total events" />
+          <MetricCard title="Pending Events" value={analytics.events_pending} description="Awaiting review" />
+          <MetricCard title="Pending KYC" value={analytics.kyc_pending} description="Awaiting approval" />
+        </div>
+      ) : null}
+
+      <PageSection
+        title="Featured Promotion"
+        subtitle="Manage the promotional banner shown on the events page."
+      >
+        <form className="grid grid-2" onSubmit={handleSaveFeaturedPromotion}>
+          <input
+            className="input"
+            placeholder="Image URL"
+            value={featuredPromotion.image_url}
+            onChange={(e) =>
+              setFeaturedPromotion({ ...featuredPromotion, image_url: e.target.value })
+            }
+            required
+          />
+
+          <input
+            className="input"
+            placeholder="Click URL"
+            value={featuredPromotion.click_url}
+            onChange={(e) =>
+              setFeaturedPromotion({ ...featuredPromotion, click_url: e.target.value })
+            }
+          />
+
+          <input
+            className="input"
+            placeholder="Title"
+            value={featuredPromotion.title}
+            onChange={(e) =>
+              setFeaturedPromotion({ ...featuredPromotion, title: e.target.value })
+            }
+          />
+
+          <input
+            className="input"
+            placeholder="Text"
+            value={featuredPromotion.text}
+            onChange={(e) =>
+              setFeaturedPromotion({ ...featuredPromotion, text: e.target.value })
+            }
+          />
+
+          <button className="btn" type="submit" style={{ gridColumn: "1 / -1" }}>
+            Save Featured Promotion
+          </button>
+        </form>
+      </PageSection>
+
+      <PageSection
+        title="Cybersecurity Log Analysis"
+        subtitle="Upload and scan server logs for suspicious activity."
+      >
+        <form className="grid grid-2" onSubmit={handleAnalyzeLogs}>
+          <input
+            className="input"
+            type="file"
+            accept=".log,.txt"
+            onChange={(e) => setLogFile(e.target.files?.[0] || null)}
+            required
+          />
+
+          <input
+            className="input"
+            placeholder='Keyword (e.g. "FAILED LOGIN")'
+            value={logKeyword}
+            onChange={(e) => setLogKeyword(e.target.value)}
+          />
+
+          <button className="btn" type="submit" disabled={analyzingLogs} style={{ gridColumn: "1 / -1" }}>
+            {analyzingLogs ? "Analyzing..." : "Analyze Logs"}
+          </button>
+        </form>
+
+        {logResults.length > 0 ? (
+          <div className="grid" style={{ gap: 12, marginTop: 18 }}>
+            {logResults.map((item, index) => (
+              <div key={`${item.timestamp || "na"}-${index}`} className="card" style={{ padding: 14 }}>
+                <strong>{item.category || "unknown"}</strong>
+                <div style={{ color: "var(--muted)", marginTop: 6 }}>
+                  {item.timestamp || "No timestamp"}
+                </div>
+                <pre style={{ whiteSpace: "pre-wrap", marginTop: 10, overflowX: "auto" }}>
+                  {item.line}
+                </pre>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </PageSection>
 
       <PageSection
         title="KYC Review Queue"
@@ -314,11 +500,7 @@ export default function AdminDashboardPage() {
                 userKyc.history[0];
 
               return (
-                <div
-                  key={userKyc.user_id}
-                  className="card"
-                  style={{ padding: 18, boxShadow: "none" }}
-                >
+                <div key={userKyc.user_id} className="card" style={{ padding: 18, boxShadow: "none" }}>
                   <div
                     style={{
                       display: "flex",
@@ -333,176 +515,77 @@ export default function AdminDashboardPage() {
                         {userKyc.username || `User #${userKyc.user_id}`}
                       </h3>
 
-                      <p style={{ margin: "0 0 6px" }}>
-                        <strong>Email:</strong> {userKyc.email || "N/A"}
+                      <p style={{ margin: 0, color: "var(--muted)" }}>
+                        {userKyc.email}
                       </p>
-                      <p style={{ margin: "0 0 6px" }}>
-                        <strong>Latest Status:</strong> {userKyc.latest_status || "N/A"}
-                      </p>
-                      <p style={{ margin: "0 0 6px" }}>
-                        <strong>Latest Progress:</strong> {userKyc.latest_progress_percentage || 0}%
-                      </p>
+
+                      <div style={{ marginTop: 10 }}>
+                        <StatusBadge>Latest: {userKyc.latest_status}</StatusBadge>
+                        <StatusBadge>Progress: {userKyc.latest_progress_percentage}%</StatusBadge>
+                        <StatusBadge>Attempts: {userKyc.attempts_count}</StatusBadge>
+                      </div>
                     </div>
 
-                    <button
-                      className="btn btn-secondary"
-                      type="button"
-                      onClick={() =>
-                        setExpandedKycUserId(expanded ? null : userKyc.user_id)
-                      }
-                    >
-                      {expanded ? "Hide History" : "View History"}
-                    </button>
-                  </div>
+                    <CtaGroup>
+                      {latestPendingHistoryItem ? (
+                        <>
+                          <button
+                            className="btn"
+                            type="button"
+                            disabled={actionLoadingKey === `kyc-approve-${latestPendingHistoryItem.id}`}
+                            onClick={() => approveKyc(latestPendingHistoryItem.id)}
+                          >
+                            Approve
+                          </button>
 
-                  <div style={{ marginTop: 10 }}>
-                    <StatusBadge>Attempts: {userKyc.attempts_count}</StatusBadge>
-                    <StatusBadge>Pending: {userKyc.pending_attempts_count}</StatusBadge>
-                    <StatusBadge>Approved: {userKyc.approved_attempts_count}</StatusBadge>
-                    <StatusBadge>Rejected: {userKyc.rejected_attempts_count}</StatusBadge>
-                    <StatusBadge>Drafts: {userKyc.draft_attempts_count}</StatusBadge>
-                    <StatusBadge>Archived: {userKyc.archived_attempts_count}</StatusBadge>
-                  </div>
-
-                  <div
-                    className="card"
-                    style={{
-                      padding: 12,
-                      marginTop: 12,
-                      background: "#fffaf5",
-                      borderColor: "rgba(255,107,0,0.12)",
-                      boxShadow: "none"
-                    }}
-                  >
-                    <p style={{ margin: "0 0 6px" }}>
-                      <strong>Latest Submitted:</strong> {formatDateTime(userKyc.latest_submitted_at)}
-                    </p>
-                    <p style={{ margin: "0 0 6px" }}>
-                      <strong>Latest Reviewed:</strong> {formatDateTime(userKyc.latest_reviewed_at)}
-                    </p>
-                    <p style={{ margin: "0 0 6px" }}>
-                      <strong>Latest Updated:</strong> {formatDateTime(userKyc.latest_last_updated_at)}
-                    </p>
-                    <p style={{ margin: 0 }}>
-                      <strong>Latest Review Notes:</strong> {userKyc.latest_review_notes || "None"}
-                    </p>
-                  </div>
-
-                  {latestPendingHistoryItem ? (
-                    <div style={{ marginTop: 14 }}>
-                      <DocumentSummaryCard summary={latestPendingHistoryItem.document_summary} />
-                    </div>
-                  ) : null}
-
-                  {latestPendingHistoryItem?.status === "pending" ? (
-                    <CtaGroup style={{ marginTop: 16 }}>
-                      <button
-                        className="btn"
-                        onClick={() => approveKyc(latestPendingHistoryItem.id)}
-                        disabled={actionLoadingKey === `kyc-approve-${latestPendingHistoryItem.id}`}
-                      >
-                        {actionLoadingKey === `kyc-approve-${latestPendingHistoryItem.id}`
-                          ? "Approving..."
-                          : "Approve Latest Pending"}
-                      </button>
+                          <button
+                            className="btn btn-secondary"
+                            type="button"
+                            disabled={actionLoadingKey === `kyc-reject-${latestPendingHistoryItem.id}`}
+                            onClick={() => rejectKyc(latestPendingHistoryItem.id)}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      ) : null}
 
                       <button
                         className="btn btn-secondary"
-                        onClick={() => rejectKyc(latestPendingHistoryItem.id)}
-                        disabled={actionLoadingKey === `kyc-reject-${latestPendingHistoryItem.id}`}
+                        type="button"
+                        onClick={() =>
+                          setExpandedKycUserId(expanded ? null : userKyc.user_id)
+                        }
                       >
-                        {actionLoadingKey === `kyc-reject-${latestPendingHistoryItem.id}`
-                          ? "Rejecting..."
-                          : "Reject Latest Pending"}
+                        {expanded ? "Hide History" : "Show History"}
                       </button>
                     </CtaGroup>
-                  ) : null}
+                  </div>
 
                   {expanded ? (
-                    <div style={{ marginTop: 18 }}>
-                      <h4 style={{ marginTop: 0 }}>KYC Progress History</h4>
-
-                      <div className="grid" style={{ gap: 12 }}>
-                        {userKyc.history.map((item) => (
-                          <div
-                            key={item.id}
-                            className="card"
-                            style={{
-                              padding: 14,
-                              boxShadow: "none",
-                              borderColor: "rgba(17,17,17,0.08)"
-                            }}
-                          >
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                              <StatusBadge>Submission #{item.id}</StatusBadge>
-                              <StatusBadge>Status: {item.status}</StatusBadge>
-                              <StatusBadge>Progress: {item.progress_percentage}%</StatusBadge>
-                              <StatusBadge>Entity: {item.entity_type}</StatusBadge>
-                            </div>
-
-                            <p style={{ margin: "0 0 6px" }}>
-                              <strong>Last Updated:</strong> {formatDateTime(item.last_updated_at)}
-                            </p>
-                            <p style={{ margin: "0 0 6px" }}>
-                              <strong>Submitted At:</strong> {formatDateTime(item.submitted_at)}
-                            </p>
-                            <p style={{ margin: "0 0 6px" }}>
-                              <strong>Reviewed At:</strong> {formatDateTime(item.reviewed_at)}
-                            </p>
-                            <p style={{ margin: "0 0 6px" }}>
-                              <strong>Archived At:</strong> {formatDateTime(item.archived_at)}
-                            </p>
-                            <p style={{ margin: "0 0 10px" }}>
-                              <strong>Review Notes:</strong> {item.review_notes || "None"}
-                            </p>
-
-                            <DocumentSummaryCard summary={item.document_summary} />
-
-                            {item.documents?.length ? (
-                              <div className="grid" style={{ gap: 8, marginTop: 12 }}>
-                                {item.documents.map((doc) => (
-                                  <a
-                                    key={doc.id}
-                                    href={`${import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"}${doc.file_url}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="btn btn-secondary"
-                                    style={{ width: "fit-content" }}
-                                  >
-                                    {doc.document_type} — Open
-                                  </a>
-                                ))}
-                              </div>
-                            ) : (
-                              <EmptyState
-                                icon="📄"
-                                title="No documents uploaded"
-                                message="This KYC attempt does not have supporting files yet."
-                              />
-                            )}
-
-                            {item.status === "pending" ? (
-                              <CtaGroup style={{ marginTop: 14 }}>
-                                <button
-                                  className="btn"
-                                  onClick={() => approveKyc(item.id)}
-                                  disabled={actionLoadingKey === `kyc-approve-${item.id}`}
-                                >
-                                  {actionLoadingKey === `kyc-approve-${item.id}` ? "Approving..." : "Approve"}
-                                </button>
-
-                                <button
-                                  className="btn btn-secondary"
-                                  onClick={() => rejectKyc(item.id)}
-                                  disabled={actionLoadingKey === `kyc-reject-${item.id}`}
-                                >
-                                  {actionLoadingKey === `kyc-reject-${item.id}` ? "Rejecting..." : "Reject"}
-                                </button>
-                              </CtaGroup>
-                            ) : null}
+                    <div className="grid" style={{ gap: 12, marginTop: 16 }}>
+                      {userKyc.history.map((historyItem) => (
+                        <div key={historyItem.id} className="card" style={{ padding: 14, boxShadow: "none" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                            <strong>Submission #{historyItem.id}</strong>
+                            <span style={{ color: "var(--muted)" }}>
+                              {formatDateTime(historyItem.last_updated_at)}
+                            </span>
                           </div>
-                        ))}
-                      </div>
+
+                          <div style={{ marginTop: 10 }}>
+                            <StatusBadge>Status: {historyItem.status}</StatusBadge>
+                            <StatusBadge>Progress: {historyItem.progress_percentage}%</StatusBadge>
+                          </div>
+
+                          {historyItem.review_notes ? (
+                            <p style={{ marginTop: 12, color: "var(--muted)" }}>
+                              {historyItem.review_notes}
+                            </p>
+                          ) : null}
+
+                          <DocumentSummaryCard summary={historyItem.document_summary} />
+                        </div>
+                      ))}
                     </div>
                   ) : null}
                 </div>
@@ -513,14 +596,14 @@ export default function AdminDashboardPage() {
       </PageSection>
 
       <PageSection
-        title="Pending Ticketed Events"
-        subtitle="Approve public ticket visibility only after payment details are ready."
+        title="Pending Event Approval"
+        subtitle="Approve ticketed events after verification."
       >
         {pendingEvents.length === 0 ? (
           <EmptyState
             icon="🎫"
-            title="No pending ticketed events"
-            message="There are no event approvals waiting for action right now."
+            title="No pending events"
+            message="All ticketed events are currently reviewed."
           />
         ) : (
           <div className="grid" style={{ gap: 16 }}>
@@ -532,89 +615,67 @@ export default function AdminDashboardPage() {
               };
 
               return (
-                <div key={event.id} className="card" style={{ padding: 16, boxShadow: "none" }}>
-                  <h3 style={{ marginTop: 0 }}>{event.title}</h3>
-                  <p><strong>Owner:</strong> {event.owner_username || `User #${event.owner_id}`}</p>
-                  <p><strong>Location:</strong> {event.location_name || "N/A"}</p>
-                  <p><strong>Category:</strong> {event.category || "N/A"}</p>
-                  <p><strong>Date:</strong> {event.event_date || "N/A"}</p>
-                  <p><strong>Ticket Sales:</strong> {event.has_ticket_sales ? "Yes" : "No"}</p>
-                  <p><strong>Status:</strong> {event.approval_status}</p>
-                  <p><strong>Description:</strong> {event.description}</p>
-
-                  <div
-                    className="card"
-                    style={{
-                      gap: 10,
-                      marginTop: 14,
-                      padding: 14,
-                      background: "#fffaf5",
-                      borderColor: "rgba(255,107,0,0.12)",
-                      boxShadow: "none"
-                    }}
-                  >
-                    <h4 style={{ marginTop: 0 }}>Approval Details</h4>
-
-                    <div className="grid" style={{ gap: 10 }}>
-                      <input
-                        className="input"
-                        placeholder="Payment link (required for ticketed events)"
-                        value={form.payment_link}
-                        onChange={(e) =>
-                          updateApprovalForm(event.id, "payment_link", e.target.value)
-                        }
-                      />
-
-                      <input
-                        className="input"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="Approved price"
-                        value={form.price}
-                        onChange={(e) =>
-                          updateApprovalForm(event.id, "price", e.target.value)
-                        }
-                      />
-
-                      <select
-                        className="select"
-                        value={form.payment_method}
-                        onChange={(e) =>
-                          updateApprovalForm(event.id, "payment_method", e.target.value)
-                        }
-                      >
-                        <option value="">Select payment method</option>
-                        {PAYMENT_METHOD_OPTIONS.map((method) => (
-                          <option key={method} value={method}>
-                            {method}
-                          </option>
-                        ))}
-                      </select>
-
-                      <p style={{ color: "var(--muted)", margin: 0 }}>
-                        Payment link appears publicly only after the event is approved and live.
+                <div key={event.id} className="card" style={{ padding: 18 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div>
+                      <h3 style={{ marginTop: 0, marginBottom: 8 }}>{event.title}</h3>
+                      <p style={{ margin: 0, color: "var(--muted)" }}>
+                        Owner: {event.owner_username || "Unknown"}
                       </p>
                     </div>
+
+                    <CtaGroup>
+                      <button
+                        className="btn"
+                        type="button"
+                        disabled={actionLoadingKey === `event-approve-${event.id}`}
+                        onClick={() => approveEvent(event.id)}
+                      >
+                        Approve
+                      </button>
+
+                      <button
+                        className="btn btn-secondary"
+                        type="button"
+                        disabled={actionLoadingKey === `event-reject-${event.id}`}
+                        onClick={() => rejectEvent(event.id)}
+                      >
+                        Reject
+                      </button>
+                    </CtaGroup>
                   </div>
 
-                  <CtaGroup style={{ marginTop: 16 }}>
-                    <button
-                      className="btn"
-                      onClick={() => approveEvent(event.id)}
-                      disabled={actionLoadingKey === `event-approve-${event.id}`}
-                    >
-                      {actionLoadingKey === `event-approve-${event.id}` ? "Approving..." : "Approve Event"}
-                    </button>
+                  <div className="grid grid-3" style={{ marginTop: 14 }}>
+                    <input
+                      className="input"
+                      placeholder="Payment link"
+                      value={form.payment_link}
+                      onChange={(e) => updateApprovalForm(event.id, "payment_link", e.target.value)}
+                    />
 
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => rejectEvent(event.id)}
-                      disabled={actionLoadingKey === `event-reject-${event.id}`}
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Price"
+                      value={form.price}
+                      onChange={(e) => updateApprovalForm(event.id, "price", e.target.value)}
+                    />
+
+                    <select
+                      className="select"
+                      value={form.payment_method}
+                      onChange={(e) => updateApprovalForm(event.id, "payment_method", e.target.value)}
                     >
-                      {actionLoadingKey === `event-reject-${event.id}` ? "Rejecting..." : "Reject Event"}
-                    </button>
-                  </CtaGroup>
+                      <option value="">Select payment method</option>
+                      {PAYMENT_METHOD_OPTIONS.map((method) => (
+                        <option key={method} value={method}>
+                          {method}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               );
             })}

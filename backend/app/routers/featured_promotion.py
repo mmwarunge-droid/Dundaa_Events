@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from backend.app.dependencies import get_current_admin_user, get_db
@@ -8,25 +8,37 @@ from backend.app.schemas.featured_promotion import (
     FeaturedPromotionResponse,
     FeaturedPromotionUpdateRequest,
 )
+from backend.app.services.cache_service import cache_get, cache_set, cache_delete
 
 router = APIRouter(prefix="/featured-promotion", tags=["Featured Promotion"])
 
 
 @router.get("/active", response_model=FeaturedPromotionResponse | None)
 def get_active_featured_promotion(db: Session = Depends(get_db)):
-    promo = db.query(FeaturedPromotion).filter(FeaturedPromotion.is_active.is_(True)).order_by(
-        FeaturedPromotion.created_at.desc()
-    ).first()
+    cache_key = "featured_promotion:active"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    promo = (
+        db.query(FeaturedPromotion)
+        .filter(FeaturedPromotion.is_active.is_(True))
+        .order_by(FeaturedPromotion.created_at.desc())
+        .first()
+    )
 
     if not promo:
         return None
 
-    return FeaturedPromotionResponse(
-        image_url=promo.image_url,
-        click_url=promo.click_url,
-        title=promo.title,
-        text=promo.text,
-    )
+    payload = {
+        "image_url": promo.image_url,
+        "click_url": promo.click_url,
+        "title": promo.title,
+        "text": promo.text,
+    }
+
+    cache_set(cache_key, payload, ttl=600)
+    return payload
 
 
 @router.put("/active", response_model=FeaturedPromotionResponse)
@@ -44,8 +56,12 @@ def update_active_featured_promotion(
         text=payload.text,
         is_active=True,
     )
+
     db.add(promo)
     db.commit()
+
+    cache_delete("featured_promotion:active")
+
     db.refresh(promo)
 
     return FeaturedPromotionResponse(

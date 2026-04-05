@@ -4,11 +4,12 @@ from datetime import date
 from math import ceil
 from pathlib import Path
 from uuid import uuid4
-from backend.app.services.notifications import create_notification
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session, joinedload, load_only
 
+from backend.app.services.cache_service import cache_get, cache_set, cache_delete_prefix
 from backend.app.dependencies import get_current_user, get_db, get_optional_current_user
 from backend.app.models.comment import Comment
 from backend.app.models.event import Event
@@ -18,9 +19,15 @@ from backend.app.models.kyc_submission import KYCSubmission
 from backend.app.models.rating import Rating
 from backend.app.models.user import User
 from backend.app.schemas.comment import CommentCreate, CommentResponse
-from backend.app.schemas.event import EventDetailResponse, EventDiscoveryResponse, EventResponse, EventUpdate
+from backend.app.schemas.event import (
+    EventDetailResponse,
+    EventDiscoveryResponse,
+    EventResponse,
+    EventUpdate,
+)
 from backend.app.schemas.guest_checkout import EventShareClickRequest, EventShareClickResponse
 from backend.app.schemas.rating import RatingCreate, RatingResponse
+from backend.app.services.notifications import create_notification
 from backend.app.utils.influencer import recalculate_user_tier
 from backend.app.utils.ranking import average_rating, ranking_score
 
@@ -152,35 +159,6 @@ def event_visible_to_user(event: Event, current_user: User | None) -> bool:
     return is_public or is_owner
 
 
-def discovery_priority_score(event: Event) -> tuple:
-    """
-    Ordering priority:
-    1. active ticket sales
-    2. trending/search/share activity
-    3. nearest upcoming date
-    4. newest creation fallback
-    """
-    active_ticket_sales = 1 if can_guest_checkout(event) else 0
-    engagement_score = (
-        (event.share_click_count or 0) * 3
-        + (event.search_hit_count or 0) * 2
-        + len(event.comments or [])
-        + len(event.ratings or [])
-    )
-
-    has_event_date = 0 if event.event_date else 1
-    event_date_value = event.event_date.isoformat() if event.event_date else "9999-12-31"
-    created_at_value = event.created_at.isoformat() if event.created_at else ""
-
-    return (
-        -active_ticket_sales,
-        -engagement_score,
-        has_event_date,
-        event_date_value,
-        created_at_value,
-    )
-
-
 @router.get("/events")
 def list_events(
     query: str | None = Query(default=None),
@@ -196,9 +174,9 @@ def list_events(
     Backward-compatible list endpoint used by existing screens.
 
     Notes:
-    - guests can now browse public events without login
+    - guests can browse public events without login
     - authenticated owners still see their own non-live events
-    - this still returns a plain list to avoid breaking current frontend
+    - returns a plain list to avoid breaking current frontend
     """
     events = db.query(Event).options(
         joinedload(Event.comments),
@@ -270,7 +248,7 @@ def list_events(
 @router.get("/events/discover", response_model=EventDiscoveryResponse)
 def discover_events(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=10, ge=1, le=50),
+    page_size: int = Query(default=4, ge=1, le=20),
     query: str | None = Query(default=None),
     category: str | None = Query(default=None),
     location_name: str | None = Query(default=None),
@@ -279,62 +257,93 @@ def discover_events(
     current_user: User | None = Depends(get_optional_current_user),
 ):
     """
-    New paginated discovery endpoint for optimized event listing.
+    Optimized paginated discovery endpoint.
 
-    Ranking priority:
-    1. events with active ticket sales
-    2. trending/search/share activity
-    3. chronological fallback
+    Public users see only live approved events.
+    This endpoint is public-focused and optimized for event card rendering.
     """
-    events = db.query(Event).options(
-        joinedload(Event.comments),
-        joinedload(Event.ratings),
-        joinedload(Event.owner),
-    ).all()
+    cache_key = (
+        f"events:discover:"
+        f"page={page}:"
+        f"page_size={page_size}:"
+        f"query={query or ''}:"
+        f"category={category or ''}:"
+        f"location={location_name or ''}:"
+        f"ticketed={ticketed_only}"
+    )
+
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
 
     query_lower = (query or "").strip().lower()
     category_lower = (category or "").strip().lower()
     location_lower = (location_name or "").strip().lower()
 
-    filtered = []
+    query_builder = db.query(Event).options(
+        load_only(
+            Event.id,
+            Event.title,
+            Event.description,
+            Event.poster_url,
+            Event.poster_type,
+            Event.location_name,
+            Event.category,
+            Event.event_date,
+            Event.price,
+            Event.payment_method,
+            Event.payment_link,
+            Event.has_ticket_sales,
+            Event.approval_status,
+            Event.is_live,
+            Event.share_slug,
+            Event.share_click_count,
+            Event.search_hit_count,
+            Event.owner_id,
+            Event.created_at,
+        ),
+        joinedload(Event.owner).load_only(
+            User.id,
+            User.username,
+            User.contact_info,
+        ),
+    ).filter(
+        Event.is_live.is_(True),
+        Event.approval_status == "approved",
+    )
 
-    for event in events:
-        if not event_visible_to_user(event, current_user):
-            continue
+    if ticketed_only:
+        query_builder = query_builder.filter(Event.has_ticket_sales.is_(True))
 
-        if ticketed_only and not event.has_ticket_sales:
-            continue
+    if category_lower:
+        query_builder = query_builder.filter(func.lower(Event.category) == category_lower)
 
-        if category_lower and (event.category or "").strip().lower() != category_lower:
-            continue
+    if location_lower:
+        query_builder = query_builder.filter(
+            func.lower(Event.location_name).contains(location_lower)
+        )
 
-        if location_lower and location_lower not in (event.location_name or "").strip().lower():
-            continue
+    if query_lower:
+        like_value = f"%{query_lower}%"
+        query_builder = query_builder.filter(
+            or_(
+                func.lower(Event.title).like(like_value),
+                func.lower(Event.description).like(like_value),
+                func.lower(Event.category).like(like_value),
+                func.lower(Event.location_name).like(like_value),
+            )
+        )
 
-        if query_lower:
-            haystack = " ".join([
-                event.title or "",
-                event.description or "",
-                event.category or "",
-                event.location_name or "",
-            ]).lower()
-
-            if query_lower not in haystack and not all(token in haystack for token in query_lower.split()):
-                continue
-
-            event.search_hit_count = (event.search_hit_count or 0) + 1
-
-        filtered.append(event)
-
-    db.commit()
-
-    filtered.sort(key=discovery_priority_score)
-
-    total = len(filtered)
+    total = query_builder.count()
     total_pages = max(1, ceil(total / page_size))
-    start = (page - 1) * page_size
-    end = start + page_size
-    selected = filtered[start:end]
+
+    selected = (
+        query_builder
+        .order_by(Event.event_date.asc().nullslast(), Event.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
 
     items = []
     for event in selected:
@@ -345,13 +354,16 @@ def discover_events(
         })
         items.append(payload)
 
-    return EventDiscoveryResponse(
-        items=items,
-        page=page,
-        page_size=page_size,
-        total=total,
-        total_pages=total_pages,
-    )
+    response_payload = {
+        "items": items,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+    }
+
+    cache_set(cache_key, response_payload, ttl=180)
+    return response_payload
 
 
 @router.post("/events/{event_id}/share/click", response_model=EventShareClickResponse)
@@ -509,6 +521,8 @@ def create_event(
     db.commit()
     db.refresh(event)
 
+    cache_delete_prefix("events:discover:")
+
     return EventResponse(**serialize_event_response(event))
 
 
@@ -562,6 +576,8 @@ def update_event(
     db.commit()
     db.refresh(event)
 
+    cache_delete_prefix("events:discover:")
+
     return EventResponse(**serialize_event_response(event))
 
 
@@ -581,6 +597,9 @@ def delete_event(
 
     db.delete(event)
     db.commit()
+
+    cache_delete_prefix("events:discover:")
+
     return {"message": "Event deleted successfully"}
 
 
@@ -675,6 +694,7 @@ async def add_rating(
 
     owner = db.query(User).filter(User.id == event.owner_id).first()
     recalculate_user_tier(db, owner)
+
     if event.owner_id != current_user.id:
         await create_notification(
             db,
@@ -686,4 +706,5 @@ async def add_rating(
             entity_type="event",
             entity_id=event.id,
         )
+
     return rating

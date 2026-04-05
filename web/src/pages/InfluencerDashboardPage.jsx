@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import KycWizard from "../components/KycWizard";
 
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import useToast from "../hooks/useToast";
 
 import CtaGroup from "../components/ui/CtaGroup";
 import EmptyState from "../components/ui/EmptyState";
@@ -23,6 +23,7 @@ const CATEGORY_OPTIONS = [
 ];
 
 const PAYMENT_METHOD_OPTIONS = ["M-Pesa", "Bank", "Card"];
+const MFA_METHOD_OPTIONS = ["email", "sms"];
 
 const MY_EVENT_STATUS_OPTIONS = [
   "All",
@@ -35,6 +36,7 @@ const MY_EVENT_STATUS_OPTIONS = [
 export default function InfluencerDashboardPage() {
   const fileInputRef = useRef(null);
   const { user } = useAuth();
+  const toast = useToast();
 
   const [stars, setStars] = useState(null);
   const [transactions, setTransactions] = useState([]);
@@ -49,8 +51,13 @@ export default function InfluencerDashboardPage() {
   const [cashout, setCashout] = useState({
     amount: "1000",
     provider: "mpesa",
-    destination_reference: ""
+    destination_reference: "",
+    mfa_method: "email"
   });
+
+  const [withdrawalChallenge, setWithdrawalChallenge] = useState(null);
+  const [otpCode, setOtpCode] = useState("");
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
 
   const [myEventsFilter, setMyEventsFilter] = useState({
     query: "",
@@ -69,7 +76,6 @@ export default function InfluencerDashboardPage() {
     event_date: "",
     price: "",
     payment_method: "",
-    payment_link: "",
     has_ticket_sales: false
   });
 
@@ -83,7 +89,6 @@ export default function InfluencerDashboardPage() {
     event_date: "",
     price: "",
     payment_method: "",
-    payment_link: "",
     has_ticket_sales: false
   });
 
@@ -99,9 +104,20 @@ export default function InfluencerDashboardPage() {
   const hasApprovedKyc = latestKyc?.status === "approved";
   const hasPendingKyc = latestKyc?.status === "pending";
   const hasRejectedKyc = latestKyc?.status === "rejected";
+  const hasDraftKyc = latestKyc?.status === "draft";
+
+  const kycDisplayStatus = hasApprovedKyc
+    ? "Success"
+    : hasPendingKyc
+    ? "Submitted for Review"
+    : hasDraftKyc
+    ? "In Progress"
+    : "In Progress";
 
   const load = async () => {
     try {
+      setError("");
+
       const [starsRes, txRes, eventsRes, kycRes] = await Promise.all([
         api.get("/stars"),
         api.get("/transactions"),
@@ -120,6 +136,7 @@ export default function InfluencerDashboardPage() {
     } catch (err) {
       console.error("Dashboard load failed:", err);
       setError("Failed to load dashboard data.");
+      toast.error("Failed to load dashboard data.");
     }
   };
 
@@ -146,6 +163,7 @@ export default function InfluencerDashboardPage() {
 
     if (!allowedTypes.includes(file.type)) {
       setError("Poster file must be JPG, PNG, or PDF.");
+      toast.error("Poster file must be JPG, PNG, or PDF.");
       return;
     }
 
@@ -160,9 +178,11 @@ export default function InfluencerDashboardPage() {
 
     try {
       if (form.has_ticket_sales && !hasApprovedKyc) {
-        throw new Error(
-          "KYC approval is required before publishing an event with ticket sales."
-        );
+        const statusMessage = hasPendingKyc
+          ? "Your KYC has been submitted for review. You can publish ticket sales after admin approval."
+          : "KYC is still in progress. Complete and submit it before publishing ticket sales.";
+
+        throw new Error(statusMessage);
       }
 
       const formData = new FormData();
@@ -170,46 +190,17 @@ export default function InfluencerDashboardPage() {
       formData.append("description", form.description);
       formData.append("has_ticket_sales", String(form.has_ticket_sales));
 
-      if (form.poster_url.trim()) {
-        formData.append("poster_url", form.poster_url.trim());
-      }
-
-      if (form.poster_file) {
-        formData.append("poster_file", form.poster_file);
-      }
-
-      if (form.google_map_link.trim()) {
-        formData.append("google_map_link", form.google_map_link.trim());
-      }
-
-      if (form.location_name.trim()) {
-        formData.append("location_name", form.location_name.trim());
-      }
-
-      if (form.category) {
-        formData.append("category", form.category);
-      }
-
-      if (form.event_date) {
-        formData.append("event_date", form.event_date);
-      }
-
-      if (form.price !== "") {
-        formData.append("price", String(Number(form.price)));
-      }
-
-      if (form.payment_method) {
-        formData.append("payment_method", form.payment_method);
-      }
-
-      if (form.payment_link.trim()) {
-        formData.append("payment_link", form.payment_link.trim());
-      }
+      if (form.poster_url.trim()) formData.append("poster_url", form.poster_url.trim());
+      if (form.poster_file) formData.append("poster_file", form.poster_file);
+      if (form.google_map_link.trim()) formData.append("google_map_link", form.google_map_link.trim());
+      if (form.location_name.trim()) formData.append("location_name", form.location_name.trim());
+      if (form.category) formData.append("category", form.category);
+      if (form.event_date) formData.append("event_date", form.event_date);
+      if (form.price !== "") formData.append("price", String(Number(form.price)));
+      if (form.payment_method) formData.append("payment_method", form.payment_method);
 
       await api.post("/events", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data"
-        }
+        headers: { "Content-Type": "multipart/form-data" }
       });
 
       setForm({
@@ -223,22 +214,26 @@ export default function InfluencerDashboardPage() {
         event_date: "",
         price: "",
         payment_method: "",
-        payment_link: "",
         has_ticket_sales: false
       });
 
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      if (fileInputRef.current) fileInputRef.current.value = "";
 
       await load();
+
+      if (form.has_ticket_sales) {
+        toast.success("Event submitted successfully for review.");
+      } else {
+        toast.success("Event published successfully.");
+      }
     } catch (err) {
       console.error("Failed to publish event:", err);
-      setError(
+      const msg =
         err?.response?.data?.detail ||
-          err?.message ||
-          "Failed to publish event."
-      );
+        err?.message ||
+        "Failed to publish event.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setPublishing(false);
     }
@@ -248,9 +243,11 @@ export default function InfluencerDashboardPage() {
     try {
       await api.post("/stars/decay");
       await load();
+      toast.success("Star decay recalculated.");
     } catch (err) {
       console.error("Decay recalculation failed:", err);
       setError("Failed to recalculate star decay.");
+      toast.error("Failed to recalculate star decay.");
     }
   };
 
@@ -258,14 +255,47 @@ export default function InfluencerDashboardPage() {
     e.preventDefault();
 
     try {
-      await api.post("/influencer/cashout", {
-        ...cashout,
-        amount: Number(cashout.amount)
+      const res = await api.post("/transactions/withdraw/initiate", {
+        amount: Number(cashout.amount),
+        provider: cashout.provider,
+        destination_reference: cashout.destination_reference,
+        mfa_method: cashout.mfa_method
       });
-      await load();
+
+      setWithdrawalChallenge(res.data);
+      setOtpCode("");
+      toast.info("Verification code sent.");
     } catch (err) {
       console.error("Cashout failed:", err);
-      setError(err?.response?.data?.detail || "Cashout request failed.");
+      const msg = err?.response?.data?.detail || "Cashout request failed.";
+      setError(msg);
+      toast.error(msg);
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    if (!withdrawalChallenge?.challenge_id) return;
+
+    try {
+      setVerifyingOtp(true);
+
+      await api.post("/transactions/withdraw/verify", {
+        challenge_id: withdrawalChallenge.challenge_id,
+        code: otpCode
+      });
+
+      setWithdrawalChallenge(null);
+      setOtpCode("");
+      await load();
+      toast.success("Withdrawal verified successfully.");
+    } catch (err) {
+      console.error("OTP verification failed:", err);
+      const msg = err?.response?.data?.detail || "OTP verification failed.";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setVerifyingOtp(false);
     }
   };
 
@@ -281,7 +311,6 @@ export default function InfluencerDashboardPage() {
       event_date: event.event_date || "",
       price: event.price ?? "",
       payment_method: event.payment_method || "",
-      payment_link: event.payment_link || "",
       has_ticket_sales: Boolean(event.has_ticket_sales)
     });
   };
@@ -298,7 +327,6 @@ export default function InfluencerDashboardPage() {
       event_date: "",
       price: "",
       payment_method: "",
-      payment_link: "",
       has_ticket_sales: false
     });
   };
@@ -310,7 +338,9 @@ export default function InfluencerDashboardPage() {
     try {
       if (editForm.has_ticket_sales && !hasApprovedKyc) {
         throw new Error(
-          "KYC approval is required before enabling ticket sales for this event."
+          hasPendingKyc
+            ? "Your KYC has been submitted for review. Wait for admin approval before enabling ticket sales."
+            : "KYC is still in progress. Complete it before enabling ticket sales."
         );
       }
 
@@ -319,19 +349,20 @@ export default function InfluencerDashboardPage() {
         category: editForm.category || null,
         event_date: editForm.event_date || null,
         price: editForm.price === "" ? null : Number(editForm.price),
-        payment_method: editForm.payment_method || null,
-        payment_link: editForm.payment_link || null
+        payment_method: editForm.payment_method || null
       });
 
       setEditingEventId(null);
       await load();
+      toast.success("Event updated successfully.");
     } catch (err) {
       console.error("Event update failed:", err);
-      setError(
+      const msg =
         err?.response?.data?.detail ||
-          err?.message ||
-          "Failed to update event."
-      );
+        err?.message ||
+        "Failed to update event.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setActionLoadingId(null);
     }
@@ -349,13 +380,14 @@ export default function InfluencerDashboardPage() {
 
     try {
       await api.delete(`/events/${eventId}`);
-      if (editingEventId === eventId) {
-        setEditingEventId(null);
-      }
+      if (editingEventId === eventId) setEditingEventId(null);
       await load();
+      toast.success("Event deleted successfully.");
     } catch (err) {
       console.error("Event delete failed:", err);
-      setError(err?.response?.data?.detail || "Failed to delete event.");
+      const msg = err?.response?.data?.detail || "Failed to delete event.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setActionLoadingId(null);
     }
@@ -492,18 +524,40 @@ export default function InfluencerDashboardPage() {
         />
         <MetricCard
           title="KYC Status"
-          value={latestKyc?.status || "not_submitted"}
+          value={kycDisplayStatus}
           description={
             hasApprovedKyc
               ? "Approved — you can publish ticketed events."
               : hasPendingKyc
-              ? "Pending admin review."
-              : hasRejectedKyc
-              ? `Rejected. ${latestKyc?.review_notes || ""}`
-              : "Submit KYC to unlock ticketed events and creator monetization."
+              ? "Submitted for Review — waiting for admin approval."
+              : "In Progress — complete your KYC to unlock ticket sales."
           }
         />
       </div>
+
+      {hasPendingKyc ? (
+        <StatusBanner
+          variant="info"
+          title="Submitted for Review"
+          message="Your KYC has been submitted for review. Ticket sales will be unlocked after admin approval."
+        />
+      ) : null}
+
+      {!hasApprovedKyc && !hasPendingKyc ? (
+        <StatusBanner
+          variant="warning"
+          title="In Progress"
+          message="Complete KYC before publishing ticketed events."
+        />
+      ) : null}
+
+      {hasApprovedKyc ? (
+        <StatusBanner
+          variant="success"
+          title="Success"
+          message="Your KYC is approved. You can publish ticketed events."
+        />
+      ) : null}
 
       <div className="grid grid-2">
         <PageSection
@@ -511,243 +565,195 @@ export default function InfluencerDashboardPage() {
           subtitle="Create a polished listing that is easy to discover and trust."
         >
           <form className="grid grid-2" onSubmit={handleCreate}>
-            <div className="grid" style={{ gap: 8 }}>
-              <label style={{ fontWeight: 700 }}>Event Title</label>
-              <input
-                className="input"
-                placeholder="Event title"
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                required
-              />
-            </div>
+            <input
+              className="input"
+              placeholder="Event title"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              required
+            />
+
+            <input
+              className="input"
+              placeholder="Location name"
+              value={form.location_name}
+              onChange={(e) => setForm({ ...form, location_name: e.target.value })}
+            />
+
+            <textarea
+              className="input"
+              placeholder="Event description"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              rows={5}
+              style={{ gridColumn: "1 / -1" }}
+              required
+            />
+
+            <input
+              className="input"
+              placeholder="Poster URL (optional)"
+              value={form.poster_url}
+              onChange={(e) => setForm({ ...form, poster_url: e.target.value })}
+            />
 
             <div className="grid" style={{ gap: 8 }}>
-              <label style={{ fontWeight: 700 }}>Poster URL</label>
+              <label style={{ fontWeight: 700 }}>Upload poster</label>
               <input
-                className="input"
-                placeholder="Poster URL"
-                value={form.poster_url}
-                onChange={(e) => setForm({ ...form, poster_url: e.target.value })}
+                ref={fileInputRef}
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                onChange={handlePosterFileChange}
               />
             </div>
 
-            <div className="grid" style={{ gap: 8 }}>
-              <label style={{ fontWeight: 700 }}>Description</label>
-              <textarea
-                className="textarea"
-                placeholder="Description"
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                required
-              />
-            </div>
+            <input
+              className="input"
+              placeholder="Google Map link"
+              value={form.google_map_link}
+              onChange={(e) => setForm({ ...form, google_map_link: e.target.value })}
+            />
 
-            <div className="grid" style={{ gap: 12 }}>
-              <label style={{ fontWeight: 700 }}>Poster Upload</label>
-
-              <div className="upload-zone">
-                <div className="upload-zone-text">
-                  <strong>Upload poster from your device</strong>
-                  <span>Accepted: JPG, PNG, PDF</span>
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".jpg,.jpeg,.png,.pdf"
-                  className="upload-input"
-                  onChange={handlePosterFileChange}
-                />
-
-                <button
-                  type="button"
-                  className="btn btn-secondary upload-button"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Choose File
-                </button>
-
-                <div className="upload-file-name">
-                  {form.poster_file ? form.poster_file.name : "No file selected"}
-                </div>
-              </div>
-
-              <input
-                className="input"
-                placeholder="Google Map link"
-                value={form.google_map_link}
-                onChange={(e) => setForm({ ...form, google_map_link: e.target.value })}
-              />
-
-              <input
-                className="input"
-                placeholder="Location name"
-                value={form.location_name}
-                onChange={(e) => setForm({ ...form, location_name: e.target.value })}
-              />
-
-              <select
-                className="select"
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-              >
-                <option value="">Select category</option>
-                {CATEGORY_OPTIONS.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                className="input"
-                type="date"
-                value={form.event_date}
-                onChange={(e) => setForm({ ...form, event_date: e.target.value })}
-              />
-            </div>
-
-            <div
-              className="card"
-              style={{
-                padding: 16,
-                background: "#fffaf5",
-                borderColor: "rgba(255,107,0,0.12)",
-                boxShadow: "none"
-              }}
+            <select
+              className="select"
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
             >
-              <strong>Ticketing</strong>
-              <div className="grid" style={{ gap: 12, marginTop: 12 }}>
-                <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <input
-                    type="checkbox"
-                    checked={form.has_ticket_sales}
-                    onChange={(e) =>
-                      setForm({ ...form, has_ticket_sales: e.target.checked })
-                    }
-                  />
-                  <span>Enable ticket sales</span>
-                </label>
+              <option value="">Select category</option>
+              {CATEGORY_OPTIONS.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
 
-                <input
-                  className="input"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Price"
-                  value={form.price}
-                  onChange={(e) => setForm({ ...form, price: e.target.value })}
-                />
+            <input
+              className="input"
+              type="date"
+              value={form.event_date}
+              onChange={(e) => setForm({ ...form, event_date: e.target.value })}
+            />
 
-                <select
-                  className="select"
-                  value={form.payment_method}
-                  onChange={(e) => setForm({ ...form, payment_method: e.target.value })}
-                >
-                  <option value="">Select payment method</option>
-                  {PAYMENT_METHOD_OPTIONS.map((method) => (
-                    <option key={method} value={method}>
-                      {method}
-                    </option>
-                  ))}
-                </select>
+            <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={form.has_ticket_sales}
+                onChange={(e) => setForm({ ...form, has_ticket_sales: e.target.checked })}
+              />
+              <span>Sell Tickets</span>
+            </label>
 
-                <input
-                  className="input"
-                  placeholder="Payment link"
-                  value={form.payment_link}
-                  onChange={(e) => setForm({ ...form, payment_link: e.target.value })}
-                />
+            <input
+              className="input"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Price"
+              value={form.price}
+              onChange={(e) => setForm({ ...form, price: e.target.value })}
+              disabled={!form.has_ticket_sales}
+            />
 
-                {form.has_ticket_sales && !hasApprovedKyc ? (
-                  <StatusBanner
-                    variant="error"
-                    title="KYC Required"
-                    message="Complete and get approval for KYC before publishing a ticketed event."
-                  />
-                ) : null}
-              </div>
-            </div>
+            <select
+              className="select"
+              value={form.payment_method}
+              onChange={(e) => setForm({ ...form, payment_method: e.target.value })}
+              disabled={!form.has_ticket_sales}
+            >
+              <option value="">Select payment method</option>
+              {PAYMENT_METHOD_OPTIONS.map((method) => (
+                <option key={method} value={method}>
+                  {method}
+                </option>
+              ))}
+            </select>
 
-            <button className="btn" type="submit" disabled={publishing}>
+            <button className="btn" type="submit" disabled={publishing} style={{ gridColumn: "1 / -1" }}>
               {publishing ? "Publishing..." : "Publish Event"}
             </button>
           </form>
         </PageSection>
 
-        <div className="grid" style={{ gap: 20 }}>
-          <PageSection
-            title="Cash Out"
-            subtitle="Request payout for your available earnings."
-          >
-            <form className="grid" onSubmit={handleCashout}>
+        <PageSection
+          title="Withdraw Funds"
+          subtitle="Withdraw earnings with OTP verification."
+        >
+          <form className="grid" style={{ gap: 12 }} onSubmit={handleCashout}>
+            <input
+              className="input"
+              type="number"
+              min="1"
+              step="0.01"
+              placeholder="Amount"
+              value={cashout.amount}
+              onChange={(e) => setCashout({ ...cashout, amount: e.target.value })}
+              required
+            />
+
+            <input
+              className="input"
+              placeholder="Destination reference"
+              value={cashout.destination_reference}
+              onChange={(e) => setCashout({ ...cashout, destination_reference: e.target.value })}
+              required
+            />
+
+            <select
+              className="select"
+              value={cashout.provider}
+              onChange={(e) => setCashout({ ...cashout, provider: e.target.value })}
+            >
+              <option value="mpesa">M-Pesa</option>
+              <option value="bank">Bank</option>
+              <option value="card">Card</option>
+            </select>
+
+            <select
+              className="select"
+              value={cashout.mfa_method}
+              onChange={(e) => setCashout({ ...cashout, mfa_method: e.target.value })}
+            >
+              {MFA_METHOD_OPTIONS.map((method) => (
+                <option key={method} value={method}>
+                  {method.toUpperCase()} OTP
+                </option>
+              ))}
+            </select>
+
+            <button className="btn" type="submit">
+              Initiate Withdrawal
+            </button>
+          </form>
+
+          {withdrawalChallenge ? (
+            <form className="grid" style={{ gap: 12, marginTop: 18 }} onSubmit={handleVerifyOtp}>
               <input
                 className="input"
-                value={cashout.amount}
-                onChange={(e) =>
-                  setCashout({ ...cashout, amount: e.target.value })
-                }
+                placeholder="Enter OTP"
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value)}
+                required
               />
-
-              <select
-                className="select"
-                value={cashout.provider}
-                onChange={(e) =>
-                  setCashout({ ...cashout, provider: e.target.value })
-                }
-              >
-                <option value="mpesa">M-Pesa</option>
-                <option value="bank">Bank</option>
-                <option value="card">Card</option>
-              </select>
-
-              <input
-                className="input"
-                placeholder="Phone / account reference"
-                value={cashout.destination_reference}
-                onChange={(e) =>
-                  setCashout({
-                    ...cashout,
-                    destination_reference: e.target.value
-                  })
-                }
-              />
-
-              <button className="btn" type="submit">
-                Request Cashout
+              <button className="btn" type="submit" disabled={verifyingOtp}>
+                {verifyingOtp ? "Verifying..." : "Verify OTP"}
               </button>
             </form>
-          </PageSection>
-
-          <StatusBanner
-            variant="success"
-            title="Creator confidence"
-            message="Dundaa gives you cleaner publishing, stronger trust signals, KYC-backed monetization, and easier event management in one place."
-          />
-        </div>
+          ) : null}
+        </PageSection>
       </div>
 
-      <PageSection card>
-        <KycWizard
-          onStatusChange={(submission) => {
-            if (submission) {
-              setKycSubmissions((prev) => {
-                const others = (prev || []).filter((item) => item.id !== submission.id);
-                return [submission, ...others];
-              });
-            } else {
-              load();
-            }
-          }}
-        />
+      <PageSection
+        title="KYC"
+        subtitle="Complete your KYC profile to unlock ticket sales and withdrawals."
+      >
+        <KycWizard onComplete={load} />
       </PageSection>
 
       <PageSection
         title="My Events"
-        subtitle="Track, edit, and organize the events you have created."
+        subtitle="Manage your published and draft event listings."
       >
-        <div className="grid grid-3" style={{ marginBottom: 20 }}>
+        <div className="grid grid-3" style={{ marginBottom: 16 }}>
           <input
             className="input"
             placeholder="Search my events"
@@ -789,251 +795,192 @@ export default function InfluencerDashboardPage() {
 
         {filteredMyEvents.length === 0 ? (
           <EmptyState
-            icon="🎟️"
-            title="No events match the current filters"
-            message="Try a different search, category, or status."
+            icon="📅"
+            title="No matching events"
+            message="Create an event or adjust your filters."
           />
         ) : (
-          <div className="grid grid-3">
-            {filteredMyEvents.map((event) => {
-              const posterSrc = resolvePosterUrl(event.poster_url);
-              const isPdfPoster = event.poster_type === "pdf";
-              const isEditing = editingEventId === event.id;
+          <div className="grid" style={{ gap: 16 }}>
+            {filteredMyEvents.map((event) => (
+              <div key={event.id} className="card" style={{ padding: 18 }}>
+                {editingEventId === event.id ? (
+                  <>
+                    <div className="grid grid-2" style={{ gap: 12 }}>
+                      <input
+                        className="input"
+                        placeholder="Title"
+                        value={editForm.title}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, title: e.target.value })
+                        }
+                      />
 
-              return (
-                <div key={event.id} className="event-card">
-                  {!isEditing ? (
-                    <>
-                      {posterSrc && !isPdfPoster ? (
-                        <img
-                          src={posterSrc}
-                          alt={event.title}
-                          className="event-card-image"
+                      <input
+                        className="input"
+                        placeholder="Poster URL"
+                        value={editForm.poster_url}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, poster_url: e.target.value })
+                        }
+                      />
+
+                      <textarea
+                        className="input"
+                        placeholder="Description"
+                        rows={4}
+                        style={{ gridColumn: "1 / -1" }}
+                        value={editForm.description}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, description: e.target.value })
+                        }
+                      />
+
+                      <input
+                        className="input"
+                        placeholder="Google Map link"
+                        value={editForm.google_map_link}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, google_map_link: e.target.value })
+                        }
+                      />
+
+                      <input
+                        className="input"
+                        placeholder="Location name"
+                        value={editForm.location_name}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, location_name: e.target.value })
+                        }
+                      />
+
+                      <select
+                        className="select"
+                        value={editForm.category}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, category: e.target.value })
+                        }
+                      >
+                        <option value="">Select category</option>
+                        {CATEGORY_OPTIONS.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+
+                      <input
+                        className="input"
+                        type="date"
+                        value={editForm.event_date}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, event_date: e.target.value })
+                        }
+                      />
+
+                      <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={editForm.has_ticket_sales}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, has_ticket_sales: e.target.checked })
+                          }
                         />
-                      ) : posterSrc && isPdfPoster ? (
-                        <a
-                          href={posterSrc}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="pdf-poster-card"
-                          style={{ marginBottom: 12 }}
-                        >
-                          <span className="pdf-poster-label">PDF Poster</span>
-                          <span className="pdf-poster-link">Open PDF</span>
-                        </a>
-                      ) : (
-                        <div
-                          className="event-card-image"
-                          style={{
-                            display: "grid",
-                            placeItems: "center",
-                            background:
-                              "linear-gradient(135deg, rgba(255,107,0,0.10), rgba(0,194,168,0.08))",
-                            color: "var(--muted)",
-                            fontWeight: 700
-                          }}
-                        >
-                          Dundaa Event
-                        </div>
-                      )}
+                        <span>Enable ticket sales</span>
+                      </label>
 
-                      <div className="card-meta">
-                        {event.location_name ? <span className="badge">{event.location_name}</span> : null}
-                        {event.category ? <span className="badge">{event.category}</span> : null}
-                        {event.event_date ? <span className="badge">{event.event_date}</span> : null}
-                        <span className="badge">{event.approval_status}</span>
-                        {event.has_ticket_sales ? <span className="badge">Ticketed</span> : null}
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Price"
+                        value={editForm.price}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, price: e.target.value })
+                        }
+                      />
+
+                      <select
+                        className="select"
+                        value={editForm.payment_method}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, payment_method: e.target.value })
+                        }
+                      >
+                        <option value="">Select payment method</option>
+                        {PAYMENT_METHOD_OPTIONS.map((method) => (
+                          <option key={method} value={method}>
+                            {method}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <CtaGroup style={{ marginTop: 14 }}>
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={() => handleSaveEvent(event.id)}
+                        disabled={actionLoadingId === event.id}
+                      >
+                        {actionLoadingId === event.id ? "Saving..." : "Save"}
+                      </button>
+
+                      <button
+                        className="btn btn-secondary"
+                        type="button"
+                        onClick={cancelEditingEvent}
+                      >
+                        Cancel
+                      </button>
+                    </CtaGroup>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start", flexWrap: "wrap" }}>
+                      <div>
+                        <h3 style={{ marginTop: 0, marginBottom: 8 }}>{event.title}</h3>
+                        <p style={{ color: "var(--muted)", margin: 0 }}>
+                          {event.location_name || "Location TBA"} • {event.event_date || "Date TBA"}
+                        </p>
+                        <div style={{ marginTop: 10 }}>
+                          <span className="badge">{event.approval_status}</span>
+                          {!event.is_live ? <span className="badge">Not live</span> : null}
+                        </div>
                       </div>
 
-                      <h4 className="card-title">{event.title}</h4>
-
-                      <p className="card-copy">
-                        {event.description?.slice(0, 90)}...
-                      </p>
-
-                      {event.rejection_reason ? (
-                        <StatusBanner
-                          variant="error"
-                          title="Review note"
-                          message={event.rejection_reason}
-                        />
-                      ) : null}
-
-                      {event.price !== null && event.price !== undefined ? (
-                        <div style={{ marginTop: 10 }}>
-                          <div style={{ color: "var(--muted)", fontSize: 13 }}>Price</div>
-                          <div className="price-emphasis">KES {event.price}</div>
-                        </div>
-                      ) : null}
-
-                      <CtaGroup style={{ marginTop: 14 }}>
-                        <Link className="btn" to={`/events/${event.id}`}>
-                          View Event
-                        </Link>
-
-                        <button
-                          className="btn btn-secondary"
-                          type="button"
-                          onClick={() => startEditingEvent(event)}
-                        >
+                      <CtaGroup>
+                        <button className="btn btn-secondary" type="button" onClick={() => startEditingEvent(event)}>
                           Edit
                         </button>
-
                         <button
                           className="btn btn-secondary"
                           type="button"
                           onClick={() => handleDeleteEvent(event.id)}
                           disabled={actionLoadingId === event.id}
                         >
-                          {actionLoadingId === event.id ? "Deleting..." : "Delete"}
+                          Delete
                         </button>
                       </CtaGroup>
-                    </>
-                  ) : (
-                    <>
-                      <h4 style={{ marginTop: 0 }}>Edit Event</h4>
+                    </div>
 
-                      <div className="grid" style={{ gap: 10 }}>
-                        <input
-                          className="input"
-                          placeholder="Event title"
-                          value={editForm.title}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, title: e.target.value })
-                          }
-                        />
-
-                        <textarea
-                          className="textarea"
-                          placeholder="Description"
-                          value={editForm.description}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, description: e.target.value })
-                          }
-                        />
-
-                        <input
-                          className="input"
-                          placeholder="Poster URL"
-                          value={editForm.poster_url}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, poster_url: e.target.value })
-                          }
-                        />
-
-                        <input
-                          className="input"
-                          placeholder="Google Map link"
-                          value={editForm.google_map_link}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, google_map_link: e.target.value })
-                          }
-                        />
-
-                        <input
-                          className="input"
-                          placeholder="Location name"
-                          value={editForm.location_name}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, location_name: e.target.value })
-                          }
-                        />
-
-                        <select
-                          className="select"
-                          value={editForm.category}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, category: e.target.value })
-                          }
-                        >
-                          <option value="">Select category</option>
-                          {CATEGORY_OPTIONS.map((category) => (
-                            <option key={category} value={category}>
-                              {category}
-                            </option>
-                          ))}
-                        </select>
-
-                        <input
-                          className="input"
-                          type="date"
-                          value={editForm.event_date}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, event_date: e.target.value })
-                          }
-                        />
-
-                        <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                          <input
-                            type="checkbox"
-                            checked={editForm.has_ticket_sales}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, has_ticket_sales: e.target.checked })
-                            }
-                          />
-                          <span>Enable ticket sales for this event</span>
-                        </label>
-
-                        <input
-                          className="input"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="Price"
-                          value={editForm.price}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, price: e.target.value })
-                          }
-                        />
-
-                        <select
-                          className="select"
-                          value={editForm.payment_method}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, payment_method: e.target.value })
-                          }
-                        >
-                          <option value="">Select payment method</option>
-                          {PAYMENT_METHOD_OPTIONS.map((method) => (
-                            <option key={method} value={method}>
-                              {method}
-                            </option>
-                          ))}
-                        </select>
-
-                        <input
-                          className="input"
-                          placeholder="Payment link"
-                          value={editForm.payment_link}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, payment_link: e.target.value })
-                          }
-                        />
-                      </div>
-
-                      <CtaGroup style={{ marginTop: 14 }}>
-                        <button
-                          className="btn"
-                          type="button"
-                          onClick={() => handleSaveEvent(event.id)}
-                          disabled={actionLoadingId === event.id}
-                        >
-                          {actionLoadingId === event.id ? "Saving..." : "Save"}
-                        </button>
-
-                        <button
-                          className="btn btn-secondary"
-                          type="button"
-                          onClick={cancelEditingEvent}
-                        >
-                          Cancel
-                        </button>
-                      </CtaGroup>
-                    </>
-                  )}
-                </div>
-              );
-            })}
+                    {event.poster_url ? (
+                      <img
+                        src={resolvePosterUrl(event.poster_url)}
+                        alt={event.title}
+                        style={{
+                          width: "100%",
+                          maxHeight: 240,
+                          objectFit: "cover",
+                          borderRadius: 16,
+                          marginTop: 14
+                        }}
+                      />
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </PageSection>
@@ -1049,21 +996,13 @@ export default function InfluencerDashboardPage() {
             message="Your payouts, purchases, and financial activity will appear here."
           />
         ) : (
-          <div className="grid" style={{ gap: 12 }}>
+          <div className="grid" style={{ gap: 14 }}>
             {transactions.map((tx) => (
-              <div
-                key={tx.id}
-                className="card"
-                style={{
-                  padding: 14,
-                  boxShadow: "none",
-                  borderColor: "rgba(17,17,17,0.08)"
-                }}
-              >
+              <div key={tx.id} className="card" style={{ padding: 16 }}>
                 <strong>{tx.tx_type}</strong>
-                <div style={{ color: "var(--muted)", marginTop: 4 }}>
+                <p style={{ color: "var(--muted)", margin: "8px 0 0" }}>
                   {tx.provider} • KES {tx.gross_amount} • {tx.status}
-                </div>
+                </p>
               </div>
             ))}
           </div>

@@ -1,21 +1,17 @@
 import React from "react";
 import { Navigate } from "react-router-dom";
-
 import { useAuth } from "../context/AuthContext";
 
-/*
-AdminRoute
-----------
-Simple role gate for admin-only pages.
-
-Only users with role:
-- admin
-- super_admin
-can access wrapped routes.
-*/
+const ADMIN_ROLES = new Set([
+  "admin",
+  "super_admin",
+  "admin_kyc",
+  "admin_analytics",
+  "admin_operations"
+]);
 
 export default function AdminRoute({ children }) {
-  const { user, authLoading, token } = useAuth();
+  const { user, authLoading } = useAuth();
 
   if (authLoading) {
     return (
@@ -25,11 +21,11 @@ export default function AdminRoute({ children }) {
     );
   }
 
-  if (!token) {
-    return <Navigate to="/login" replace />;
+  if (!user) {
+    return <Navigate to="/admin/login" replace />;
   }
 
-  if (user?.role !== "admin" && user?.role !== "super_admin") {
+  if (!ADMIN_ROLES.has(user.role)) {
     return <Navigate to="/events" replace />;
   }
 

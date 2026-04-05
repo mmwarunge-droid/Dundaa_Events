@@ -11,7 +11,13 @@ from backend.app.security import decode_token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/login", auto_error=False)
 
-ADMIN_ROLES = {"admin", "super_admin", "admin_kyc", "admin_analytics", "admin_operations"}
+ADMIN_ROLES = {
+    "admin",
+    "super_admin",
+    "admin_kyc",
+    "admin_analytics",
+    "admin_operations",
+}
 
 
 def get_db() -> Generator:

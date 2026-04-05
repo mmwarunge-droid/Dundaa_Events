@@ -12,6 +12,7 @@ from backend.app.schemas.admin import (
     AdminKycHistoryItem,
     AdminKycReviewQueueItem,
 )
+from backend.app.services.cache_service import cache_delete_prefix
 from backend.app.schemas.event import EventResponse, AdminEventApproveRequest
 from backend.app.schemas.kyc import KYCReviewRequest, KYCSubmissionResponse
 
@@ -98,75 +99,67 @@ def list_pending_events(
 
     return results
 
-
-@router.post("/events/{event_id}/approve")
+@router.post("/admin/events/{event_id}/approve")
 def approve_event(
     event_id: int,
-    payload: AdminEventApproveRequest,
+    payload: EventApprovalRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
     event = db.query(Event).filter(Event.id == event_id).first()
+
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    if event.has_ticket_sales:
-        if not payload.payment_link or not payload.payment_link.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="A payment link is required before approving a ticketed event.",
-            )
-        event.payment_link = payload.payment_link.strip()
-    else:
-        event.payment_link = None
-
-    if payload.price is not None:
-        event.price = payload.price
-
-    if payload.payment_method is not None:
-        event.payment_method = payload.payment_method
-
     event.approval_status = "approved"
-    event.rejection_reason = None
-    event.approved_at = datetime.now(timezone.utc)
-    event.approved_by_user_id = current_user.id
     event.is_live = True
+    event.rejection_reason = None
+    event.approved_by_user_id = current_user.id
+    event.payment_link = payload.payment_link
+    event.price = payload.price
+    event.payment_method = payload.payment_method
 
     db.add(event)
     db.commit()
     db.refresh(event)
 
+    cache_delete_prefix("events:discover:")
+
     return {
         "message": "Event approved successfully",
         "event_id": event.id,
-        "is_live": event.is_live,
         "approval_status": event.approval_status,
     }
-
-
-@router.post("/events/{event_id}/reject")
+@router.post("/admin/events/{event_id}/reject")
 def reject_event(
     event_id: int,
-    payload: KYCReviewRequest,
+    payload: EventRejectionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
     event = db.query(Event).filter(Event.id == event_id).first()
+
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
     event.approval_status = "rejected"
-    event.rejection_reason = payload.review_notes or "Event rejected by admin review"
-    event.approved_at = None
-    event.approved_by_user_id = None
     event.is_live = False
+    event.rejection_reason = payload.review_notes
+    event.approved_by_user_id = None
     event.payment_link = None
 
     db.add(event)
     db.commit()
+    db.refresh(event)
 
-    return {"message": "Event rejected successfully"}
+    cache_delete_prefix("events:discover:")
 
+    return {
+        "message": "Event rejected successfully",
+        "event_id": event.id,
+        "approval_status": event.approval_status,
+        "rejection_reason": event.rejection_reason,
+    }
 
 @router.get("/kyc/pending", response_model=list[KYCSubmissionResponse])
 def list_pending_kyc(
