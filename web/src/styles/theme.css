@@ -314,59 +314,114 @@ img {
 
 /* promo section */
 
+/* Container stays mostly the same but stronger contrast */
 .promo-ad {
   position: relative;
   overflow: hidden;
-  padding: 28px;
+  padding: 40px 28px;
   border-radius: 24px;
+
   background:
     radial-gradient(circle at right center, rgba(0,194,168,0.12), transparent 26%),
-    linear-gradient(135deg, #fff4ed, #ffffff);
-  border: 1px solid rgba(255, 107, 0, 0.12);
+    linear-gradient(135deg, #f5f5f5, #ffffff);
+
+  border: 2px solid #000; /* stronger like reference */
+  text-align: center;
 }
 
+/* Content wrapper */
 .promo-ad-content {
   position: relative;
   z-index: 2;
   max-width: 760px;
+  margin: 0 auto;
 }
 
-.promo-ad h2 {
-  margin: 0;
-  font-size: 2rem;
-  line-height: 1.1;
-}
-
-.promo-ad p {
-  margin: 10px 0 0;
-  color: var(--muted);
-  line-height: 1.6;
-}
-
+/* Small top chip */
 .promo-ad-chip {
   display: inline-block;
-  width: fit-content;
   background: #fff;
-  color: var(--primary);
-  border: 1px solid rgba(255, 107, 0, 0.15);
-  padding: 8px 12px;
+  color: #000;
+  border: 1px solid rgba(0,0,0,0.15);
+  padding: 6px 12px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
+/* Headline (brush-style feel) */
+.promo-ad h2 {
+  margin: 0;
+  font-size: 2.4rem;
+  line-height: 1.1;
+  font-weight: 900;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Optional: make second line larger */
+.promo-ad h2 span {
+  display: block;
+  font-size: 2.8rem;
+}
+
+/* Supporting text */
+.promo-ad p {
+  margin: 14px 0 0;
+  color: #555;
+  line-height: 1.6;
+}
+
+/* BIG NUMBER (new class you can add inside markup) */
+.promo-ad-count {
+  font-size: 3.8rem;
+  font-weight: 800;
+  margin-top: 20px;
+
+  background: linear-gradient(135deg, #00aaff, #1e4fff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* CTA BUTTON (new but consistent naming) */
+.promo-ad-cta {
+  display: inline-block;
+  margin-top: 20px;
+  padding: 16px 28px;
+
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+
+  background: linear-gradient(135deg, #00aaff, #1e4fff);
+  color: #fff;
+  border: none;
+
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.promo-ad-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(30, 79, 255, 0.3);
+}
+
+/* Keep your orb styling but slightly refine */
 .promo-ad-orb {
   position: absolute;
   border-radius: 999px;
-  filter: blur(24px);
+  filter: blur(40px);
   pointer-events: none;
 }
 
 .promo-ad-orb-left {
   width: 180px;
   height: 180px;
-  background: rgba(255, 107, 0, 0.15);
+  background: rgba(255, 107, 0, 0.18);
   left: -40px;
   top: -40px;
 }
@@ -374,7 +429,7 @@ img {
 .promo-ad-orb-right {
   width: 220px;
   height: 220px;
-  background: rgba(0, 194, 168, 0.12);
+  background: rgba(0, 194, 168, 0.15);
   right: -50px;
   bottom: -50px;
 }

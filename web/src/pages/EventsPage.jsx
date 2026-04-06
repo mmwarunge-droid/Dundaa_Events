@@ -9,11 +9,11 @@ import { useAuth } from "../context/AuthContext";
 
 const FEATURED_AD = {
   eyebrow: "Featured Promotion",
-  title: "Grow your brand with Dundaa influencer marketing",
+  title: "It’s time. Be Part of the Change!!!",
   text:
-    "Get your event or business seen by targeted audiences through creator partnerships, boosted visibility, and premium placements inside the Dundaa experience.",
-  ctaLabel: "Visit Sponsor Website",
-  ctaUrl: "https://example.com"
+    "We are EXERCISING our SOVEREIGN and INALIENABLE RIGHT to DETERMINE the form of governance of our country in line with OUR Constitution for ourselves and our FUTURE GENERATIONS.",
+  ctaLabel: "Sisi ndio Nani?",
+  ctaUrl: "https://lindamwananchi.com/"
 };
 
 export default function EventsPage() {
