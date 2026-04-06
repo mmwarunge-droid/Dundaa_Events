@@ -12,7 +12,7 @@ const FEATURED_AD = {
   title: "It’s time. Be Part of the Change!!!",
   text:
     "We are EXERCISING our SOVEREIGN and INALIENABLE RIGHT to DETERMINE the form of governance of our country in line with OUR Constitution for ourselves and our FUTURE GENERATIONS.",
-  ctaLabel: "Sisi ndio Nani?",
+  ctaLabel: "COUNT ME IN",
   ctaUrl: "https://lindamwananchi.com/"
 };
 
@@ -116,7 +116,7 @@ export default function EventsPage() {
             </a>
 
             <span style={{ color: "var(--muted)" }}>
-              Premium placement area for paid adverts
+              Sisi ndio Nani?
             </span>
           </div>
         </div>
