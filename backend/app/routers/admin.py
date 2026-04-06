@@ -7,26 +7,19 @@ from app.dependencies import get_current_admin_user, get_db
 from app.models.event import Event
 from app.models.kyc_submission import KYCSubmission
 from app.models.user import User
-
 from app.schemas.admin import (
+    AdminEventApproveRequest,
     AdminKycDocumentSummary,
     AdminKycHistoryItem,
     AdminKycReviewQueueItem,
-    AdminEventApproveRequest,
     EventRejectionRequest,
 )
-
 from app.schemas.event import EventResponse
 from app.schemas.kyc import KYCReviewRequest, KYCSubmissionResponse
-
 from app.services.cache_service import cache_delete_prefix
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
-
-# ----------------------------
-# Utility Functions
-# ----------------------------
 
 def should_expose_payment_link(event: Event) -> bool:
     return bool(
@@ -85,30 +78,28 @@ def build_document_summary(submission: KYCSubmission) -> AdminKycDocumentSummary
     )
 
 
-# ----------------------------
-# Event Management
-# ----------------------------
-
 @router.get("/events/pending", response_model=list[EventResponse])
 def list_pending_events(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    events = db.query(Event).options(
-        joinedload(Event.owner)
-    ).filter(
-        Event.approval_status == "pending_review"
-    ).order_by(
-        Event.created_at.desc()
-    ).all()
+    events = (
+        db.query(Event)
+        .options(joinedload(Event.owner))
+        .filter(Event.approval_status == "pending_review")
+        .order_by(Event.created_at.desc())
+        .all()
+    )
 
     results = []
     for event in events:
-        results.append({
-            **serialize_admin_event_response(event),
-            "owner_username": event.owner.username if event.owner else None,
-            "owner_contact_info": event.owner.contact_info if event.owner else None,
-        })
+        results.append(
+            {
+                **serialize_admin_event_response(event),
+                "owner_username": event.owner.username if event.owner else None,
+                "owner_contact_info": event.owner.contact_info if event.owner else None,
+            }
+        )
 
     return results
 
@@ -137,7 +128,6 @@ def approve_event(
     db.commit()
     db.refresh(event)
 
-    # 🔥 Redis cache invalidation
     cache_delete_prefix("events:discover:")
 
     return {
@@ -169,7 +159,6 @@ def reject_event(
     db.commit()
     db.refresh(event)
 
-    # 🔥 Redis cache invalidation
     cache_delete_prefix("events:discover:")
 
     return {
@@ -180,22 +169,18 @@ def reject_event(
     }
 
 
-# ----------------------------
-# KYC Management
-# ----------------------------
-
 @router.get("/kyc/pending", response_model=list[KYCSubmissionResponse])
 def list_pending_kyc(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    submissions = db.query(KYCSubmission).options(
-        joinedload(KYCSubmission.documents)
-    ).filter(
-        KYCSubmission.status == "pending"
-    ).order_by(
-        KYCSubmission.submitted_at.desc()
-    ).all()
+    submissions = (
+        db.query(KYCSubmission)
+        .options(joinedload(KYCSubmission.documents))
+        .filter(KYCSubmission.status == "pending")
+        .order_by(KYCSubmission.submitted_at.desc())
+        .all()
+    )
 
     return submissions
 
@@ -207,18 +192,20 @@ def list_kyc_review_queue(
 ):
     users = db.query(User).order_by(User.created_at.desc()).all()
 
-    queue = []
+    queue: list[AdminKycReviewQueueItem] = []
 
     for user in users:
-        attempts = db.query(KYCSubmission).options(
-            joinedload(KYCSubmission.documents)
-        ).filter(
-            KYCSubmission.user_id == user.id
-        ).order_by(
-            KYCSubmission.last_updated_at.desc().nullslast(),
-            KYCSubmission.submitted_at.desc().nullslast(),
-            KYCSubmission.id.desc(),
-        ).all()
+        attempts = (
+            db.query(KYCSubmission)
+            .options(joinedload(KYCSubmission.documents))
+            .filter(KYCSubmission.user_id == user.id)
+            .order_by(
+                KYCSubmission.last_updated_at.desc().nullslast(),
+                KYCSubmission.submitted_at.desc().nullslast(),
+                KYCSubmission.id.desc(),
+            )
+            .all()
+        )
 
         if not attempts:
             continue
@@ -282,9 +269,7 @@ def approve_kyc(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    submission = db.query(KYCSubmission).filter(
-        KYCSubmission.id == submission_id
-    ).first()
+    submission = db.query(KYCSubmission).filter(KYCSubmission.id == submission_id).first()
 
     if not submission:
         raise HTTPException(status_code=404, detail="KYC submission not found")
@@ -307,9 +292,7 @@ def reject_kyc(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    submission = db.query(KYCSubmission).filter(
-        KYCSubmission.id == submission_id
-    ).first()
+    submission = db.query(KYCSubmission).filter(KYCSubmission.id == submission_id).first()
 
     if not submission:
         raise HTTPException(status_code=404, detail="KYC submission not found")

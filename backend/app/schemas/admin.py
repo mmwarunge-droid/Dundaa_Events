@@ -1,8 +1,9 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.kyc import KYCDocumentResponse
+from app.schemas.event import PaymentMethod
 
 
 class AdminKycDocumentSummary(BaseModel):
@@ -27,7 +28,7 @@ class AdminKycHistoryItem(BaseModel):
     last_updated_at: datetime | None = None
     archived_at: datetime | None = None
 
-    documents: list[KYCDocumentResponse] = []
+    documents: list[KYCDocumentResponse] = Field(default_factory=list)
     document_summary: AdminKycDocumentSummary
 
 
@@ -51,4 +52,14 @@ class AdminKycReviewQueueItem(BaseModel):
     draft_attempts_count: int = 0
 
     latest_review_notes: str | None = None
-    history: list[AdminKycHistoryItem]
+    history: list[AdminKycHistoryItem] = Field(default_factory=list)
+
+
+class EventRejectionRequest(BaseModel):
+    review_notes: str = Field(..., min_length=3, max_length=1000)
+
+
+class AdminEventApproveRequest(BaseModel):
+    payment_link: str | None = None
+    price: float | None = Field(default=None, ge=0)
+    payment_method: PaymentMethod | None = None

@@ -24,15 +24,19 @@ from app.routers import (
 from app.security import decode_token_or_none
 from app.services.websocket_manager import notification_ws_manager
 
-Base.metadata.create_all(bind=engine)
-
 app = FastAPI(title="Dundaa API", version="0.7.0")
+
+# Keep startup resilient in production.
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as exc:
+    print(f"Database initialization skipped/failed: {exc}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",  # local frontend
-        "https://dundaa-events-frontend.onrender.com",  # deployed frontend
+        "http://localhost:5173",
+        "https://dundaa-events-frontend.onrender.com",
         "https://dundaaevents.com",
         "https://www.dundaaevents.com",
     ],
@@ -78,10 +82,12 @@ async def notifications_websocket(websocket: WebSocket):
             return
 
         await notification_ws_manager.connect(user.id, websocket)
-        await websocket.send_json({
-            "event": "notifications.connected",
-            "user_id": user.id,
-        })
+        await websocket.send_json(
+            {
+                "event": "notifications.connected",
+                "user_id": user.id,
+            }
+        )
 
         while True:
             await websocket.receive_text()
