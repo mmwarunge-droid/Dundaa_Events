@@ -51,7 +51,9 @@ function AppShell() {
 
       <main>
         <Routes>
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<Navigate to="/events" replace />} />
+
+          <Route path="/home" element={<HomePage />} />
 
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
@@ -97,7 +99,7 @@ function AppShell() {
             }
           />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/events" replace />} />
         </Routes>
       </main>
 

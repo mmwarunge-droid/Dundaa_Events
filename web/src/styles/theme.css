@@ -194,11 +194,10 @@ img {
 
 .nav-logo {
   display: block;
-  height: 52px; /* keep layout stable */
+  height: 52px;
   width: auto;
   object-fit: contain;
-
-  transform: scale(1.8); /* increase size */
+  transform: scale(1.8);
   transform-origin: left center;
 }
 
@@ -312,24 +311,102 @@ img {
   color: var(--muted);
 }
 
-/* promo section */
+/* =========================================
+   FEATURED PROMO FLIP CARD
+========================================= */
 
-/* Container stays mostly the same but stronger contrast */
 .promo-ad {
   position: relative;
-  overflow: hidden;
-  padding: 40px 28px;
+  perspective: 1400px;
+  padding: 0;
+  min-height: 360px;
   border-radius: 24px;
-
-  background:
-    radial-gradient(circle at right center, rgba(0,194,168,0.12), transparent 26%),
-    linear-gradient(135deg, #f5f5f5, #ffffff);
-
-  border: 2px solid #000; /* stronger like reference */
-  text-align: center;
+  overflow: hidden;
+  background: transparent;
+  border: none;
+  box-shadow: 0 16px 36px rgba(17, 17, 17, 0.10);
 }
 
-/* Content wrapper */
+.promo-flip-inner {
+  position: relative;
+  width: 100%;
+  min-height: 360px;
+  transform-style: preserve-3d;
+  transition: transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.promo-ad:hover .promo-flip-inner {
+  transform: rotateY(180deg);
+}
+
+.promo-flip-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-height: 360px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.promo-flip-front {
+  background: #111;
+}
+
+.promo-flip-image {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  object-fit: cover;
+  display: block;
+}
+
+.promo-flip-front::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(17, 17, 17, 0.10) 0%,
+      rgba(17, 17, 17, 0.22) 48%,
+      rgba(17, 17, 17, 0.58) 100%
+    );
+}
+
+.promo-flip-front-badge {
+  position: absolute;
+  z-index: 2;
+  left: 20px;
+  top: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #000;
+  border: 1px solid rgba(17, 17, 17, 0.10);
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.promo-flip-back {
+  transform: rotateY(180deg);
+  display: grid;
+  place-items: center;
+  padding: 34px 24px;
+  text-align: center;
+  background:
+    radial-gradient(circle at top right, rgba(255,107,0,0.18), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(0,194,168,0.14), transparent 25%),
+    linear-gradient(135deg, #121212, #1f1f1f 65%, #0f0f0f);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
 .promo-ad-content {
   position: relative;
   z-index: 2;
@@ -337,12 +414,11 @@ img {
   margin: 0 auto;
 }
 
-/* Small top chip */
 .promo-ad-chip {
   display: inline-block;
-  background: #fff;
-  color: #000;
-  border: 1px solid rgba(0,0,0,0.15);
+  background: rgba(255,255,255,0.10);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.12);
   padding: 6px 12px;
   border-radius: 999px;
   font-size: 12px;
@@ -350,67 +426,51 @@ img {
   margin-bottom: 12px;
 }
 
-/* Headline (brush-style feel) */
 .promo-ad h2 {
   margin: 0;
-  font-size: 2.4rem;
-  line-height: 1.1;
+  font-size: clamp(1.7rem, 3vw, 2.7rem);
+  line-height: 1.08;
   font-weight: 900;
-  color: #000;
+  color: #fff;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.02em;
 }
 
-/* Optional: make second line larger */
 .promo-ad h2 span {
   display: block;
-  font-size: 2.8rem;
 }
 
-/* Supporting text */
 .promo-ad p {
   margin: 14px 0 0;
-  color: #555;
-  line-height: 1.6;
+  color: rgba(255,255,255,0.82);
+  line-height: 1.7;
 }
 
-/* BIG NUMBER (new class you can add inside markup) */
-.promo-ad-count {
-  font-size: 3.8rem;
-  font-weight: 800;
-  margin-top: 20px;
-
-  background: linear-gradient(135deg, #00aaff, #1e4fff);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-/* CTA BUTTON (new but consistent naming) */
-.promo-ad-cta {
-  display: inline-block;
+.promo-ad .promo-ad-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
   margin-top: 20px;
   padding: 16px 28px;
-
   border-radius: 10px;
   font-weight: 700;
   font-size: 14px;
   letter-spacing: 2px;
   text-transform: uppercase;
-
-  background: linear-gradient(135deg, #00aaff, #1e4fff);
-  color: #fff;
-  border: none;
-
+  background: linear-gradient(135deg, #00aaff, #1e4fff) !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow: 0 10px 25px rgba(30, 79, 255, 0.3) !important;
   cursor: pointer;
   transition: all 0.25s ease;
 }
 
-.promo-ad-cta:hover {
+.promo-ad .promo-ad-cta:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(30, 79, 255, 0.3);
+  box-shadow: 0 14px 30px rgba(30, 79, 255, 0.35);
 }
 
-/* Keep your orb styling but slightly refine */
 .promo-ad-orb {
   position: absolute;
   border-radius: 999px;
@@ -434,6 +494,11 @@ img {
   bottom: -50px;
 }
 
+.promo-ad a.promo-ad-cta,
+.promo-ad button.promo-ad-cta {
+  background: linear-gradient(135deg, #00aaff, #1e4fff) !important;
+}
+
 /* marketplace cards */
 
 .event-card,
@@ -444,6 +509,7 @@ img {
   padding: 16px;
   box-shadow: 0 10px 24px rgba(17,17,17,0.06);
   transition: transform 0.18s ease, box-shadow 0.18s ease;
+  overflow: hidden;
 }
 
 .event-card:hover,
@@ -459,6 +525,19 @@ img {
   object-fit: cover;
   border-radius: 18px;
   margin-bottom: 14px;
+  background:
+    linear-gradient(135deg, rgba(255,107,0,0.08), rgba(0,194,168,0.06));
+  transition:
+    transform 0.35s ease,
+    filter 0.35s ease,
+    opacity 0.25s ease;
+  box-shadow: inset 0 0 0 1px rgba(17,17,17,0.04);
+}
+
+.event-card:hover .event-card-image,
+.campaign-card:hover .campaign-card-image {
+  transform: scale(1.02);
+  filter: saturate(1.04) contrast(1.01);
 }
 
 .card-title {
@@ -491,6 +570,65 @@ img {
   font-size: 1.1rem;
   font-weight: 800;
   color: var(--text);
+}
+
+/* Skeleton polish */
+
+.event-card-skeleton .event-card-image,
+.event-card-skeleton .skeleton-line,
+.event-card-skeleton .skeleton-chip,
+.event-card-skeleton .skeleton-button {
+  position: relative;
+  overflow: hidden;
+  background: rgba(17,17,17,0.06);
+}
+
+.event-card-skeleton .event-card-image::after,
+.event-card-skeleton .skeleton-line::after,
+.event-card-skeleton .skeleton-chip::after,
+.event-card-skeleton .skeleton-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0) 0%,
+    rgba(255,255,255,0.55) 50%,
+    rgba(255,255,255,0) 100%
+  );
+  animation: skeleton-shimmer 1.5s infinite;
+}
+
+.event-card-skeleton .event-card-image {
+  border-radius: 18px;
+  margin-bottom: 14px;
+}
+
+.event-card-skeleton .skeleton-chip {
+  height: 26px;
+  border-radius: 999px;
+}
+
+.event-card-skeleton .skeleton-line {
+  height: 14px;
+  border-radius: 8px;
+}
+
+.event-card-skeleton .skeleton-line-lg {
+  height: 24px;
+  border-radius: 8px;
+}
+
+.event-card-skeleton .skeleton-button {
+  height: 42px;
+  border-radius: 12px;
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 /* trust section */
@@ -679,16 +817,6 @@ img {
   -webkit-user-drag: none;
 }
 
-.profile-zoom-control {
-  display: grid;
-  gap: 8px;
-}
-
-.profile-zoom-control label {
-  color: var(--text);
-  font-weight: 600;
-}
-
 /* page header */
 
 .page-header-bar {
@@ -698,6 +826,7 @@ img {
   gap: 16px;
   flex-wrap: wrap;
 }
+
 /* Shared design system helpers */
 
 .page-section {
@@ -776,17 +905,6 @@ img {
 
 /* responsive */
 
-@media (max-width: 768px) {
-  .page-section {
-    padding: 22px;
-  }
-
-  .metric-card {
-    min-height: auto;
-  }
-}
-
-
 @media (max-width: 900px) {
   .market-hero {
     grid-template-columns: 1fr;
@@ -814,23 +932,61 @@ img {
     padding: 24px;
   }
 
-  .promo-ad h2 {
-    font-size: 1.5rem;
-  }
-
   .profile-photo-section {
     grid-template-columns: 1fr;
     justify-items: center;
     text-align: center;
   }
+
+  .page-section {
+    padding: 22px;
+  }
+
+  .metric-card {
+    min-height: auto;
+  }
+
+  .promo-ad,
+  .promo-flip-inner,
+  .promo-flip-face,
+  .promo-flip-image {
+    min-height: 280px;
+  }
+
+  .promo-ad:hover .promo-flip-inner {
+    transform: none;
+  }
+
+  .promo-ad {
+    perspective: none;
+  }
+
+  .promo-flip-inner {
+    transform: none !important;
+  }
+
+  .promo-flip-front {
+    display: none;
+  }
+
+  .promo-flip-back {
+    position: relative;
+    transform: none;
+    min-height: 280px;
+    border-radius: 18px;
+    padding: 20px 16px;
+  }
+
+  .promo-ad h2 {
+    font-size: 1.35rem;
+  }
 }
+
 /* =========================================
-   MOBILE CLEAN MODE (CRITICAL FIX)
+   MOBILE CLEAN MODE
 ========================================= */
 
 @media (max-width: 600px) {
-
-  /* Reduce global spacing */
   .container {
     padding: 14px;
   }
@@ -839,7 +995,6 @@ img {
     padding: 16px;
   }
 
-  /* Reduce card heaviness */
   .card,
   .event-card,
   .campaign-card,
@@ -849,7 +1004,6 @@ img {
     box-shadow: 0 6px 14px rgba(0,0,0,0.06);
   }
 
-  /* Reduce hero weight */
   .market-hero-main {
     padding: 18px;
     border-radius: 18px;
@@ -863,27 +1017,11 @@ img {
     font-size: 0.92rem;
   }
 
-  /* Simplify promo section */
-  .promo-ad {
-    padding: 16px;
-    border-radius: 16px;
-  }
-
-  .promo-ad h2 {
-    font-size: 1.3rem;
-  }
-
-  .promo-ad-orb {
-    display: none; /* remove visual clutter */
-  }
-
-  /* Smaller buttons */
   .btn {
     padding: 10px 14px;
     font-size: 0.9rem;
   }
 
-  /* Inputs tighter */
   .input,
   .textarea,
   .select {
@@ -891,14 +1029,12 @@ img {
     border-radius: 10px;
   }
 
-  /* Grid fix (CRITICAL) */
   .grid-2,
   .grid-3 {
     grid-template-columns: 1fr;
     gap: 14px;
   }
 
-  /* Event cards more compact */
   .event-card-image,
   .campaign-card-image {
     height: 140px;
@@ -914,7 +1050,6 @@ img {
     min-height: auto;
   }
 
-  /* Reduce nav clutter */
   .nav-inner {
     gap: 10px;
   }
@@ -925,10 +1060,9 @@ img {
   }
 
   .nav-logo {
-    transform: scale(1.2); /* reduce oversized logo */
+    transform: scale(1.2);
   }
 
-  /* Profile section fix */
   .profile-avatar-frame {
     width: 120px;
     height: 120px;
@@ -939,14 +1073,19 @@ img {
     height: 200px;
   }
 
-  /* Remove excessive shadows globally */
   * {
     box-shadow: none !important;
   }
 
-  /* Restore light shadows only where needed */
   .card,
   .event-card {
     box-shadow: 0 4px 10px rgba(0,0,0,0.05) !important;
+  }
+
+  .promo-flip-front-badge {
+    left: 14px;
+    top: 14px;
+    padding: 7px 12px;
+    font-size: 11px;
   }
 }

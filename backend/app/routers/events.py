@@ -1,15 +1,12 @@
 import os
-import shutil
 from datetime import date
 from math import ceil
-from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload, load_only
 
-from app.services.cache_service import cache_get, cache_set, cache_delete_prefix
 from app.dependencies import get_current_user, get_db, get_optional_current_user
 from app.models.comment import Comment
 from app.models.event import Event
@@ -27,61 +24,102 @@ from app.schemas.event import (
 )
 from app.schemas.guest_checkout import EventShareClickRequest, EventShareClickResponse
 from app.schemas.rating import RatingCreate, RatingResponse
+from app.services.cache_service import cache_delete_prefix, cache_get, cache_set
+from app.services.image_service import process_uploaded_image
 from app.services.notifications import create_notification
+from app.services.storage_cloudinary import upload_event_images_to_cloudinary
 from app.utils.influencer import recalculate_user_tier
 from app.utils.ranking import average_rating, ranking_score
 
 router = APIRouter(tags=["Events"])
 
-POSTER_UPLOAD_DIR = Path("uploads/posters")
-POSTER_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-ALLOWED_POSTER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".pdf"}
-
+# Frontend URL used when generating event share links.
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
+
+# Accepted poster MIME types for uploaded image files.
+ALLOWED_POSTER_CONTENT_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
 
 
 def infer_poster_type_from_url(url: str | None) -> str | None:
+    """
+    Infer poster type from a remote URL or stored URL string.
+
+    This is mainly used when poster_url is provided directly instead of poster_file.
+    """
     if not url:
         return None
 
     lower = url.lower()
-    if ".pdf" in lower:
-        return "pdf"
+    if ".webp" in lower:
+        return "webp"
     if ".png" in lower:
         return "png"
     if ".jpg" in lower or ".jpeg" in lower:
         return "jpg"
+    if ".pdf" in lower:
+        return "pdf"
     return None
 
 
-def save_uploaded_poster(upload: UploadFile) -> tuple[str, str]:
+def validate_external_url(url: str | None, field_name: str) -> None:
+    """
+    Basic validation for externally supplied URLs.
+    """
+    if url and not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field_name} must start with http:// or https://",
+        )
+
+
+def upload_processed_poster(upload: UploadFile) -> dict:
+    """
+    Validate, compress, and upload a poster image.
+
+    Expected return structure from upload_event_images_to_cloudinary():
+    {
+        "poster_url": "...",
+        "poster_thumb_url": "...",
+        "poster_storage_key": "..."
+    }
+    """
     if not upload.filename:
         raise HTTPException(status_code=400, detail="Uploaded file has no filename")
 
-    extension = Path(upload.filename).suffix.lower()
-
-    if extension not in ALLOWED_POSTER_EXTENSIONS:
+    if upload.content_type not in ALLOWED_POSTER_CONTENT_TYPES:
         raise HTTPException(
             status_code=400,
-            detail="Poster file must be .jpg, .jpeg, .png, or .pdf",
+            detail="Poster must be a JPG, PNG, or WebP image",
         )
 
-    generated_name = f"{uuid4().hex}{extension}"
-    destination = POSTER_UPLOAD_DIR / generated_name
+    raw_bytes = upload.file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    with destination.open("wb") as buffer:
-        shutil.copyfileobj(upload.file, buffer)
+    processed = process_uploaded_image(raw_bytes)
 
-    poster_type = "pdf" if extension == ".pdf" else "png" if extension == ".png" else "jpg"
-    public_url = f"/uploads/posters/{generated_name}"
+    # This assumes your Cloudinary helper takes optimized bytes and returns URLs/IDs.
+    uploaded = upload_event_images_to_cloudinary(
+        original_bytes=processed.original_bytes,
+        thumb_bytes=processed.thumb_bytes,
+    )
 
-    return public_url, poster_type
+    return {
+        **uploaded,
+        "poster_type": processed.extension,
+        "poster_width": processed.width,
+        "poster_height": processed.height,
+        "poster_bytes": processed.size_bytes,
+    }
 
 
 def ensure_share_slug(event: Event) -> str:
     """
-    Generate a stable share slug if missing.
+    Generate a stable share slug if one does not already exist.
     """
     if event.share_slug:
         return event.share_slug
@@ -91,6 +129,9 @@ def ensure_share_slug(event: Event) -> str:
 
 
 def user_has_approved_kyc(db: Session, user_id: int) -> bool:
+    """
+    Check whether the user has an approved KYC submission.
+    """
     approved = db.query(KYCSubmission).filter(
         KYCSubmission.user_id == user_id,
         KYCSubmission.status == "approved",
@@ -100,6 +141,9 @@ def user_has_approved_kyc(db: Session, user_id: int) -> bool:
 
 
 def should_expose_payment_link(event: Event) -> bool:
+    """
+    Payment link should only be exposed for live, approved, ticketed events.
+    """
     return bool(
         event.has_ticket_sales
         and event.approval_status == "approved"
@@ -122,6 +166,9 @@ def can_guest_checkout(event: Event) -> bool:
 
 
 def build_share_url(event: Event) -> str:
+    """
+    Build a public share URL for the event.
+    """
     slug = event.share_slug or ensure_share_slug(event)
     return f"{FRONTEND_BASE_URL}/events/{event.id}?share={slug}"
 
@@ -286,7 +333,13 @@ def discover_events(
             Event.title,
             Event.description,
             Event.poster_url,
+            Event.poster_thumb_url,
             Event.poster_type,
+            Event.poster_width,
+            Event.poster_height,
+            Event.poster_bytes,
+            Event.featured_promo_image_url,
+            Event.featured_promo_click_url,
             Event.location_name,
             Event.category,
             Event.event_date,
@@ -457,8 +510,16 @@ def get_event(
 def create_event(
     title: str = Form(...),
     description: str = Form(...),
+
+    # Poster inputs
     poster_url: str | None = Form(default=None),
     poster_file: UploadFile | None = File(default=None),
+
+    # Featured promo inputs
+    featured_promo_image_url: str | None = Form(default=None),
+    featured_promo_click_url: str | None = Form(default=None),
+
+    # Event details
     google_map_link: str | None = Form(default=None),
     location_name: str | None = Form(default=None),
     category: str | None = Form(default=None),
@@ -466,15 +527,46 @@ def create_event(
     price: float | None = Form(default=None),
     payment_method: str | None = Form(default=None),
     has_ticket_sales: bool = Form(default=False),
+
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Create an event.
+
+    Supports either:
+    - external poster_url
+    - uploaded poster_file that gets optimized and uploaded to Cloudinary
+
+    Also supports optional featured promo fields.
+    """
+    # Validate optional external URLs.
+    validate_external_url(poster_url, "poster_url")
+    validate_external_url(featured_promo_image_url, "featured_promo_image_url")
+    validate_external_url(featured_promo_click_url, "featured_promo_click_url")
+
+    # Default poster-related values.
     resolved_poster_url = poster_url
+    resolved_poster_thumb_url = None
+    resolved_poster_storage_key = None
     resolved_poster_type = infer_poster_type_from_url(poster_url)
+    resolved_poster_width = None
+    resolved_poster_height = None
+    resolved_poster_bytes = None
 
+    # If a file is uploaded, process + compress + upload it.
+    # Uploaded file takes precedence over poster_url.
     if poster_file is not None:
-        resolved_poster_url, resolved_poster_type = save_uploaded_poster(poster_file)
+        uploaded_poster = upload_processed_poster(poster_file)
+        resolved_poster_url = uploaded_poster["poster_url"]
+        resolved_poster_thumb_url = uploaded_poster["poster_thumb_url"]
+        resolved_poster_storage_key = uploaded_poster["poster_storage_key"]
+        resolved_poster_type = uploaded_poster["poster_type"]
+        resolved_poster_width = uploaded_poster["poster_width"]
+        resolved_poster_height = uploaded_poster["poster_height"]
+        resolved_poster_bytes = uploaded_poster["poster_bytes"]
 
+    # Validate ticketed event creation against KYC approval.
     if has_ticket_sales and not user_has_approved_kyc(db, current_user.id):
         raise HTTPException(
             status_code=400,
@@ -484,6 +576,7 @@ def create_event(
             ),
         )
 
+    # Ticketed events go through review before going live.
     approval_status = "approved"
     is_live = True
 
@@ -494,8 +587,21 @@ def create_event(
     event = Event(
         title=title,
         description=description,
+
+        # Poster fields
         poster_url=resolved_poster_url,
+        poster_thumb_url=resolved_poster_thumb_url,
+        poster_storage_key=resolved_poster_storage_key,
         poster_type=resolved_poster_type,
+        poster_width=resolved_poster_width,
+        poster_height=resolved_poster_height,
+        poster_bytes=resolved_poster_bytes,
+
+        # Featured promo fields
+        featured_promo_image_url=featured_promo_image_url,
+        featured_promo_click_url=featured_promo_click_url,
+
+        # Event metadata
         google_map_link=google_map_link,
         location_name=location_name,
         category=category,
@@ -516,11 +622,13 @@ def create_event(
     db.commit()
     db.refresh(event)
 
+    # Share slug is generated after ID exists.
     ensure_share_slug(event)
     db.add(event)
     db.commit()
     db.refresh(event)
 
+    # Bust discovery cache so newly created event can appear immediately.
     cache_delete_prefix("events:discover:")
 
     return EventResponse(**serialize_event_response(event))
@@ -533,6 +641,14 @@ def update_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Update an existing event owned by the current user.
+
+    Note:
+    - payment_link is protected and not directly editable here
+    - if poster_url is updated directly, poster_type is recalculated
+    - if ticket sales are turned on, event goes back to pending review
+    """
     event = db.query(Event).filter(
         Event.id == event_id,
         Event.owner_id == current_user.id,
@@ -542,11 +658,23 @@ def update_event(
         raise HTTPException(status_code=404, detail="Event not found or access denied")
 
     update_data = payload.model_dump(exclude_unset=True)
+
+    # Prevent direct manual edits to payment_link in this route.
     update_data.pop("payment_link", None)
 
+    # Validate direct URL updates if present.
     if "poster_url" in update_data:
+        validate_external_url(update_data["poster_url"], "poster_url")
         update_data["poster_type"] = infer_poster_type_from_url(update_data["poster_url"])
 
+    if "featured_promo_image_url" in update_data:
+        validate_external_url(update_data["featured_promo_image_url"], "featured_promo_image_url")
+
+    if "featured_promo_click_url" in update_data:
+        validate_external_url(update_data["featured_promo_click_url"], "featured_promo_click_url")
+
+    # If ticket sales are being turned on for a previously non-ticketed event,
+    # re-run KYC gate and move the event back into review.
     if "has_ticket_sales" in update_data:
         turning_on_ticket_sales = bool(update_data["has_ticket_sales"]) and not event.has_ticket_sales
 
@@ -563,6 +691,7 @@ def update_event(
             update_data["approved_by_user_id"] = None
             update_data["rejection_reason"] = None
 
+        # If ticket sales are being turned off, clear ticketing details.
         if update_data["has_ticket_sales"] is False:
             update_data["price"] = None
             update_data["payment_method"] = None
@@ -587,6 +716,9 @@ def delete_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Delete an event owned by the current user.
+    """
     event = db.query(Event).filter(
         Event.id == event_id,
         Event.owner_id == current_user.id,
@@ -610,6 +742,9 @@ async def add_comment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Add a comment to an event.
+    """
     event = db.query(Event).filter(Event.id == event_id).first()
 
     if not event:
@@ -650,6 +785,9 @@ async def add_rating(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Add or update a rating on an event.
+    """
     if payload.value not in [1, 2, 3, 4, 5]:
         raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
 
@@ -682,6 +820,7 @@ async def add_rating(
         db.commit()
         db.refresh(rating)
 
+    # Create influencer star credits for stronger ratings.
     if payload.value in [3, 4, 5]:
         star = InfluencerStar(
             user_id=event.owner_id,

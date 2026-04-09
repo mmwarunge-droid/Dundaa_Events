@@ -153,34 +153,47 @@ export default function HomePage() {
       </section>
 
       <section className="promo-ad">
-        <div className="promo-ad-orb promo-ad-orb-left" />
-        <div className="promo-ad-orb promo-ad-orb-right" />
+  <div className="promo-ad-orb promo-ad-orb-left" />
+  <div className="promo-ad-orb promo-ad-orb-right" />
 
-        <div className="promo-ad-content">
-          <span className="promo-ad-chip">Creator growth</span>
-          <h2>Launch events, build momentum, and turn attention into bookings.</h2>
-          <p>
-            Dundaa is designed for creators, organizers, and promoters who want
-            visibility, trust, and a cleaner path from discovery to conversion.
-          </p>
+  <div className="promo-ad-content">
+    <span className="promo-ad-chip">Creator growth</span>
 
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
-            {user ? (
-              <Link className="btn" to="/dashboard">
-                Go to dashboard
-              </Link>
-            ) : (
-              <Link className="btn" to="/signup">
-                Start creating
-              </Link>
-            )}
+    <h2>
+      Launch events, build momentum,
+      <span>and turn attention into bookings.</span>
+    </h2>
 
-            <Link className="btn btn-secondary" to="/events">
-              See live events
-            </Link>
-          </div>
-        </div>
-      </section>
+    <p>
+      Dundaa is designed for creators, organizers, and promoters who want
+      visibility, trust, and a cleaner path from discovery to conversion.
+    </p>
+
+    <div
+      style={{
+        display: "flex",
+        gap: 12,
+        flexWrap: "wrap",
+        marginTop: 18,
+        justifyContent: "center"
+      }}
+    >
+      {user ? (
+        <Link className="promo-ad-cta" to="/dashboard">
+          Go to dashboard
+        </Link>
+      ) : (
+        <Link className="promo-ad-cta" to="/signup">
+          Start creating
+        </Link>
+      )}
+
+      <Link className="btn btn-secondary" to="/events">
+        See live events
+      </Link>
+    </div>
+  </div>
+</section>
 
       <section className="grid" style={{ gap: 16 }}>
         <div className="section-head">

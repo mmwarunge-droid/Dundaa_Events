@@ -13,8 +13,62 @@ const FEATURED_AD = {
   text:
     "We are EXERCISING our SOVEREIGN and INALIENABLE RIGHT to DETERMINE the form of governance of our country in line with OUR Constitution for ourselves and our FUTURE GENERATIONS.",
   ctaLabel: "COUNT ME IN",
-  ctaUrl: "https://lindamwananchi.com/"
+  ctaUrl: "https://lindamwananchi.com/",
+  imageUrl: "https://pixabay.com/images/download/smg_foto-argentina-7334423_1920.jpg"
 };
+
+function EventCardSkeleton() {
+  return (
+    <div className="event-card event-card-skeleton" aria-hidden="true">
+      <div className="event-card-image" />
+
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          marginTop: 14
+        }}
+      >
+        <span className="skeleton-chip" style={{ width: 70 }} />
+        <span className="skeleton-chip" style={{ width: 90 }} />
+        <span className="skeleton-chip" style={{ width: 80 }} />
+      </div>
+
+      <div
+        className="skeleton-line-lg"
+        style={{ marginTop: 16, width: "78%" }}
+      />
+
+      <div
+        className="skeleton-line"
+        style={{ marginTop: 12, width: "100%" }}
+      />
+
+      <div
+        className="skeleton-line"
+        style={{ marginTop: 8, width: "92%" }}
+      />
+
+      <div
+        className="skeleton-line"
+        style={{ marginTop: 8, width: "65%" }}
+      />
+
+      <div
+        style={{
+          marginTop: 20,
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap"
+        }}
+      >
+        <div className="skeleton-button" style={{ width: 110 }} />
+        <div className="skeleton-button" style={{ width: 120 }} />
+      </div>
+    </div>
+  );
+}
 
 export default function EventsPage() {
   const { user } = useAuth();
@@ -33,40 +87,70 @@ export default function EventsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const fetchEvents = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const res = await api.get("/events/discover", {
-        params: {
-          page,
-          page_size: pageSize,
-          query: query || undefined,
-          category: category || undefined,
-          location_name: locationName || undefined,
-          ticketed_only: ticketedOnly || undefined
-        }
-      });
-
-      setEvents(res.data.items || []);
-      setTotalPages(res.data.total_pages || 1);
-      setTotal(res.data.total || 0);
-    } catch (err) {
-      console.error("Failed to fetch events:", err);
-      setError("Failed to load events.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  const [debouncedCategory, setDebouncedCategory] = useState(category);
+  const [debouncedLocationName, setDebouncedLocationName] = useState(locationName);
 
   useEffect(() => {
-    fetchEvents();
-  }, [page, pageSize, query, category, locationName, ticketedOnly]);
+    const timer = setTimeout(() => setDebouncedQuery(query), 400);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedCategory(category), 400);
+    return () => clearTimeout(timer);
+  }, [category]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedLocationName(locationName), 400);
+    return () => clearTimeout(timer);
+  }, [locationName]);
 
   useEffect(() => {
     setPage(1);
-  }, [query, category, locationName, ticketedOnly]);
+  }, [debouncedQuery, debouncedCategory, debouncedLocationName, ticketedOnly]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchEvents = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const res = await api.get("/events/discover", {
+          params: {
+            page,
+            page_size: pageSize,
+            query: debouncedQuery || undefined,
+            category: debouncedCategory || undefined,
+            location_name: debouncedLocationName || undefined,
+            ticketed_only: ticketedOnly || undefined
+          }
+        });
+
+        if (!isMounted) return;
+
+        setEvents(res.data.items || []);
+        setTotalPages(res.data.total_pages || 1);
+        setTotal(res.data.total || 0);
+      } catch (err) {
+        if (!isMounted) return;
+        console.error("Failed to fetch events:", err);
+        setError("Failed to load events.");
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchEvents();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [page, pageSize, debouncedQuery, debouncedCategory, debouncedLocationName, ticketedOnly]);
 
   return (
     <div className="container grid" style={{ gap: 28 }}>
@@ -89,35 +173,50 @@ export default function EventsPage() {
         )}
       </section>
 
-      <section className="promo-ad card">
-        <div className="promo-ad-orb promo-ad-orb-left" />
-        <div className="promo-ad-orb promo-ad-orb-right" />
+      <section className="promo-ad">
+        <div className="promo-flip-inner">
+          <div className="promo-flip-face promo-flip-front">
+            <img
+              src={FEATURED_AD.imageUrl}
+              alt={FEATURED_AD.title}
+              className="promo-flip-image"
+              loading="lazy"
+            />
 
-        <div className="promo-ad-content">
-          <span className="promo-ad-chip">{FEATURED_AD.eyebrow}</span>
-          <h2>{FEATURED_AD.title}</h2>
-          <p>{FEATURED_AD.text}</p>
+            <div className="promo-flip-front-badge">
+              {FEATURED_AD.eyebrow}
+            </div>
+          </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              flexWrap: "wrap",
-              alignItems: "center"
-            }}
-          >
-            <a
-              href={FEATURED_AD.ctaUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="btn"
-            >
-              {FEATURED_AD.ctaLabel}
-            </a>
+          <div className="promo-flip-face promo-flip-back">
+            <div className="promo-ad-content">
+              <span className="promo-ad-chip">{FEATURED_AD.eyebrow}</span>
+              <h2>{FEATURED_AD.title}</h2>
+              <p>{FEATURED_AD.text}</p>
 
-            <span style={{ color: "var(--muted)" }}>
-              Sisi ndio Nani?
-            </span>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}
+              >
+                <a
+                  href={FEATURED_AD.ctaUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="promo-ad-cta"
+                >
+                  {FEATURED_AD.ctaLabel}
+                </a>
+
+                <span style={{ color: "rgba(255,255,255,0.78)" }}>
+                  Sisi ndio Nani?
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -171,9 +270,13 @@ export default function EventsPage() {
       )}
 
       <div className="grid grid-3">
-        {events.map((event) => (
-          <EventCard key={event.id} event={event} />
-        ))}
+        {loading
+          ? Array.from({ length: pageSize }).map((_, index) => (
+              <EventCardSkeleton key={index} />
+            ))
+          : events.map((event) => (
+              <EventCard key={event.id} event={event} />
+            ))}
       </div>
 
       {!loading && events.length === 0 && !error && (
@@ -184,11 +287,13 @@ export default function EventsPage() {
         </div>
       )}
 
-      <PaginationControls
-        page={page}
-        totalPages={totalPages}
-        onPageChange={setPage}
-      />
+      {!loading && totalPages > 1 && (
+        <PaginationControls
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+        />
+      )}
     </div>
   );
 }

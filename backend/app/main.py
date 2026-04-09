@@ -39,6 +39,7 @@ app.add_middleware(
         "https://dundaa-events-frontend.onrender.com",
         "https://dundaaevents.com",
         "https://www.dundaaevents.com",
+        "https://dundaa-events.vercel.app/",
     ],
     allow_credentials=True,
     allow_methods=["*"],

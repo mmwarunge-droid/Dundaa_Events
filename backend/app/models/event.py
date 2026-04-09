@@ -1,15 +1,5 @@
-from sqlalchemy import (
-    Boolean,
-    Column,
-    Date,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    func,
-)
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
+
 from sqlalchemy.orm import relationship
 
 from app.db import Base
@@ -23,7 +13,12 @@ class Event(Base):
     description = Column(Text, nullable=False)
 
     poster_url = Column(String, nullable=True)
+    poster_thumb_url = Column(String, nullable=True)
+    poster_storage_key = Column(String, nullable=True)
     poster_type = Column(String, nullable=True)
+    poster_width = Column(Integer, nullable=True)
+    poster_height = Column(Integer, nullable=True)
+    poster_bytes = Column(Integer, nullable=True)
 
     google_map_link = Column(String, nullable=True)
     location_name = Column(String, nullable=True)

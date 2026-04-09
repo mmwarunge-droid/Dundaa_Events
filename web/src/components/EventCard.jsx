@@ -7,10 +7,19 @@ import { useAuth } from "../context/AuthContext";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
+/**
+ * Resolve image/file URLs.
+ * - absolute URLs are returned as-is
+ * - relative backend paths are prefixed with the API base URL
+ */
 function resolvePosterUrl(url) {
   if (!url) return null;
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  return `${API_BASE_URL}${url}`;
+
+  const normalizedBase = API_BASE_URL.replace(/\/+$/, "");
+  const normalizedPath = url.startsWith("/") ? url : `/${url}`;
+
+  return `${normalizedBase}${normalizedPath}`;
 }
 
 export default function EventCard({ event }) {
@@ -19,10 +28,13 @@ export default function EventCard({ event }) {
   const [imageBroken, setImageBroken] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
-  const isPdfPoster = event.poster_type === "pdf";
-  const posterSrc = resolvePosterUrl(event.poster_url);
-
   const isOwner = user?.id === event.owner_id;
+
+  // Prefer smaller optimized thumbnail for card views, then fall back to main poster.
+  const preferredPosterUrl = event.poster_thumb_url || event.poster_url || null;
+  const posterSrc = resolvePosterUrl(preferredPosterUrl);
+
+  const isPdfPoster = event.poster_type === "pdf";
 
   const canShowGuestCheckout = !!event.can_guest_checkout;
   const canShowPaymentLink =
@@ -30,6 +42,11 @@ export default function EventCard({ event }) {
     event.is_live &&
     event.approval_status === "approved" &&
     !!event.payment_link;
+
+  const hasFeaturedPromo =
+    !!event.featured_promo_image_url && !!event.featured_promo_click_url;
+
+  const featuredPromoImageSrc = resolvePosterUrl(event.featured_promo_image_url);
 
   const trimmedDescription = useMemo(() => {
     const text = event.description || "";
@@ -54,6 +71,7 @@ export default function EventCard({ event }) {
             alt={event.title}
             onError={() => setImageBroken(true)}
             className="event-card-image"
+            loading="lazy"
           />
         ) : posterSrc && isPdfPoster ? (
           <a
@@ -133,7 +151,8 @@ export default function EventCard({ event }) {
               fontSize: 14
             }}
           >
-            Hosted by <strong style={{ color: "var(--text)" }}>{event.owner_username}</strong>
+            Hosted by{" "}
+            <strong style={{ color: "var(--text)" }}>{event.owner_username}</strong>
           </div>
         )}
 
@@ -153,6 +172,47 @@ export default function EventCard({ event }) {
               {event.rejection_reason}
             </p>
           </div>
+        )}
+
+        {hasFeaturedPromo && (
+          <a
+            href={event.featured_promo_click_url}
+            target="_blank"
+            rel="noreferrer"
+            className="card"
+            style={{
+              marginTop: 14,
+              padding: 12,
+              display: "block",
+              textDecoration: "none",
+              color: "inherit",
+              boxShadow: "none",
+              borderColor: "rgba(255,107,0,0.14)",
+              background: "#fffaf5"
+            }}
+          >
+            {featuredPromoImageSrc && (
+              <img
+                src={featuredPromoImageSrc}
+                alt="Featured promotion"
+                loading="lazy"
+                style={{
+                  width: "100%",
+                  height: 140,
+                  objectFit: "cover",
+                  borderRadius: 12,
+                  marginBottom: 10
+                }}
+              />
+            )}
+
+            <div style={{ fontWeight: 700, color: "var(--primary)" }}>
+              Featured Promotion
+            </div>
+            <div style={{ color: "var(--muted)", marginTop: 4 }}>
+              Tap to learn more
+            </div>
+          </a>
         )}
 
         <div className="card-actions">
