@@ -14,3 +14,4 @@ python-dotenv
 python-dotenv==1.0.1
 redis==5.0.4
 Pillow==10.4.0
+cloudinary==1.40.0
