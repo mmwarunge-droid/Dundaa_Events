@@ -14,7 +14,7 @@ const FEATURED_AD = {
     "We are EXERCISING our SOVEREIGN and INALIENABLE RIGHT to DETERMINE the form of governance of our country in line with OUR Constitution for ourselves and our FUTURE GENERATIONS.",
   ctaLabel: "COUNT ME IN",
   ctaUrl: "https://lindamwananchi.com/",
-  imageUrl: "https://pixabay.com/images/download/smg_foto-argentina-7334423_1920.jpg"
+  imageUrl: "/sifuna2.png"
 };
 
 function EventCardSkeleton() {

@@ -7,19 +7,22 @@ import { useAuth } from "../context/AuthContext";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
-/**
- * Resolve image/file URLs.
- * - absolute URLs are returned as-is
- * - relative backend paths are prefixed with the API base URL
- */
-function resolvePosterUrl(url) {
+function resolveAssetUrl(url) {
   if (!url) return null;
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
 
-  const normalizedBase = API_BASE_URL.replace(/\/+$/, "");
-  const normalizedPath = url.startsWith("/") ? url : `/${url}`;
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
+  }
 
-  return `${normalizedBase}${normalizedPath}`;
+  // Backend-served files
+  if (url.startsWith("/uploads/") || url.startsWith("uploads/")) {
+    const normalizedBase = API_BASE_URL.replace(/\/+$/, "");
+    const normalizedPath = url.startsWith("/") ? url : `/${url}`;
+    return `${normalizedBase}${normalizedPath}`;
+  }
+
+  // Frontend public files
+  return url.startsWith("/") ? url : `/${url}`;
 }
 
 export default function EventCard({ event }) {
@@ -32,7 +35,8 @@ export default function EventCard({ event }) {
 
   // Prefer smaller optimized thumbnail for card views, then fall back to main poster.
   const preferredPosterUrl = event.poster_thumb_url || event.poster_url || null;
-  const posterSrc = resolvePosterUrl(preferredPosterUrl);
+  const posterSrc = resolveAssetUrl(preferredPosterUrl);
+  const featuredPromoImageSrc = resolveAssetUrl(event.featured_promo_image_url);
 
   const isPdfPoster = event.poster_type === "pdf";
 
@@ -45,8 +49,6 @@ export default function EventCard({ event }) {
 
   const hasFeaturedPromo =
     !!event.featured_promo_image_url && !!event.featured_promo_click_url;
-
-  const featuredPromoImageSrc = resolvePosterUrl(event.featured_promo_image_url);
 
   const trimmedDescription = useMemo(() => {
     const text = event.description || "";

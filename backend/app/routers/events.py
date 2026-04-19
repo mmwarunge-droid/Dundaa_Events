@@ -496,8 +496,6 @@ def get_event(
 
     return EventDetailResponse(
         **serialized,
-        owner_username=event.owner.username if event.owner else None,
-        owner_contact_info=event.owner.contact_info if event.owner else None,
         comments=[CommentResponse.model_validate(c) for c in event.comments],
         ratings=[RatingResponse.model_validate(r) for r in event.ratings],
         average_rating=average_rating(event),

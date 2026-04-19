@@ -1,0 +1,48 @@
+                                              Table "public.events"
+          Column          |           Type           | Collation | Nullable |              Default               
+--------------------------+--------------------------+-----------+----------+------------------------------------
+ id                       | integer                  |           | not null | nextval('events_id_seq'::regclass)
+ title                    | character varying        |           | not null | 
+ description              | text                     |           | not null | 
+ poster_url               | character varying        |           |          | 
+ poster_type              | character varying        |           |          | 
+ google_map_link          | character varying        |           |          | 
+ location_name            | character varying        |           |          | 
+ category                 | character varying        |           |          | 
+ event_date               | date                     |           |          | 
+ price                    | double precision         |           |          | 
+ payment_method           | character varying        |           |          | 
+ payment_link             | character varying        |           |          | 
+ has_ticket_sales         | boolean                  |           | not null | 
+ approval_status          | character varying        |           | not null | 
+ rejection_reason         | text                     |           |          | 
+ approved_at              | timestamp with time zone |           |          | 
+ approved_by_user_id      | integer                  |           |          | 
+ is_live                  | boolean                  |           | not null | 
+ share_slug               | character varying        |           |          | 
+ share_click_count        | integer                  |           | not null | 
+ search_hit_count         | integer                  |           | not null | 
+ owner_id                 | integer                  |           | not null | 
+ created_at               | timestamp with time zone |           |          | now()
+ featured_promo_image_url | character varying        |           |          | 
+ featured_promo_click_url | character varying        |           |          | 
+Indexes:
+    "events_pkey" PRIMARY KEY, btree (id)
+    "ix_events_approval_status" btree (approval_status)
+    "ix_events_category" btree (category)
+    "ix_events_event_date" btree (event_date)
+    "ix_events_id" btree (id)
+    "ix_events_live_approval_date" btree (is_live, approval_status, event_date)
+    "ix_events_owner_id" btree (owner_id)
+    "ix_events_share_slug" UNIQUE, btree (share_slug)
+    "ix_events_title" btree (title)
+Foreign-key constraints:
+    "events_approved_by_user_id_fkey" FOREIGN KEY (approved_by_user_id) REFERENCES users(id)
+    "events_owner_id_fkey" FOREIGN KEY (owner_id) REFERENCES users(id)
+Referenced by:
+    TABLE "campaigns" CONSTRAINT "campaigns_linked_event_id_fkey" FOREIGN KEY (linked_event_id) REFERENCES events(id)
+    TABLE "comments" CONSTRAINT "comments_event_id_fkey" FOREIGN KEY (event_id) REFERENCES events(id)
+    TABLE "event_share_clicks" CONSTRAINT "event_share_clicks_event_id_fkey" FOREIGN KEY (event_id) REFERENCES events(id)
+    TABLE "guest_orders" CONSTRAINT "guest_orders_event_id_fkey" FOREIGN KEY (event_id) REFERENCES events(id)
+    TABLE "ratings" CONSTRAINT "ratings_event_id_fkey" FOREIGN KEY (event_id) REFERENCES events(id)
+
