@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import date
 from math import ceil
 from uuid import uuid4
@@ -33,10 +34,8 @@ from app.utils.ranking import average_rating, ranking_score
 
 router = APIRouter(tags=["Events"])
 
-# Frontend URL used when generating event share links.
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
 
-# Accepted poster MIME types for uploaded image files.
 ALLOWED_POSTER_CONTENT_TYPES = {
     "image/jpeg",
     "image/png",
@@ -45,11 +44,6 @@ ALLOWED_POSTER_CONTENT_TYPES = {
 
 
 def infer_poster_type_from_url(url: str | None) -> str | None:
-    """
-    Infer poster type from a remote URL or stored URL string.
-
-    This is mainly used when poster_url is provided directly instead of poster_file.
-    """
     if not url:
         return None
 
@@ -66,9 +60,6 @@ def infer_poster_type_from_url(url: str | None) -> str | None:
 
 
 def validate_external_url(url: str | None, field_name: str) -> None:
-    """
-    Basic validation for externally supplied URLs.
-    """
     if url and not (url.startswith("http://") or url.startswith("https://")):
         raise HTTPException(
             status_code=400,
@@ -77,16 +68,6 @@ def validate_external_url(url: str | None, field_name: str) -> None:
 
 
 def upload_processed_poster(upload: UploadFile) -> dict:
-    """
-    Validate, compress, and upload a poster image.
-
-    Expected return structure from upload_event_images_to_cloudinary():
-    {
-        "poster_url": "...",
-        "poster_thumb_url": "...",
-        "poster_storage_key": "..."
-    }
-    """
     if not upload.filename:
         raise HTTPException(status_code=400, detail="Uploaded file has no filename")
 
@@ -100,9 +81,11 @@ def upload_processed_poster(upload: UploadFile) -> dict:
     if not raw_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    processed = process_uploaded_image(raw_bytes)
+    try:
+        processed = process_uploaded_image(raw_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # This assumes your Cloudinary helper takes optimized bytes and returns URLs/IDs.
     uploaded = upload_event_images_to_cloudinary(
         original_bytes=processed.original_bytes,
         thumb_bytes=processed.thumb_bytes,
@@ -116,11 +99,7 @@ def upload_processed_poster(upload: UploadFile) -> dict:
         "poster_bytes": processed.size_bytes,
     }
 
-
 def ensure_share_slug(event: Event) -> str:
-    """
-    Generate a stable share slug if one does not already exist.
-    """
     if event.share_slug:
         return event.share_slug
 
@@ -129,9 +108,6 @@ def ensure_share_slug(event: Event) -> str:
 
 
 def user_has_approved_kyc(db: Session, user_id: int) -> bool:
-    """
-    Check whether the user has an approved KYC submission.
-    """
     approved = db.query(KYCSubmission).filter(
         KYCSubmission.user_id == user_id,
         KYCSubmission.status == "approved",
@@ -141,9 +117,6 @@ def user_has_approved_kyc(db: Session, user_id: int) -> bool:
 
 
 def should_expose_payment_link(event: Event) -> bool:
-    """
-    Payment link should only be exposed for live, approved, ticketed events.
-    """
     return bool(
         event.has_ticket_sales
         and event.approval_status == "approved"
@@ -153,9 +126,6 @@ def should_expose_payment_link(event: Event) -> bool:
 
 
 def can_guest_checkout(event: Event) -> bool:
-    """
-    Guest checkout is only allowed for live approved ticketed events with a valid price.
-    """
     return bool(
         event.has_ticket_sales
         and event.is_live
@@ -166,22 +136,11 @@ def can_guest_checkout(event: Event) -> bool:
 
 
 def build_share_url(event: Event) -> str:
-    """
-    Build a public share URL for the event.
-    """
     slug = event.share_slug or ensure_share_slug(event)
     return f"{FRONTEND_BASE_URL}/events/{event.id}?share={slug}"
 
 
 def serialize_event_response(event: Event) -> dict:
-    """
-    Central serializer.
-
-    Important:
-    - payment_link stays hidden unless event is approved + live + ticketed
-    - share_url is always exposed for live events
-    - guest checkout flag is exposed so frontend can show guest purchase CTA
-    """
     data = EventResponse.model_validate(event).model_dump()
 
     if not should_expose_payment_link(event):
@@ -193,14 +152,17 @@ def serialize_event_response(event: Event) -> dict:
     data["share_url"] = build_share_url(event)
     data["can_guest_checkout"] = can_guest_checkout(event)
 
+    if event.owner:
+        data["owner_username"] = event.owner.username
+        data["owner_contact_info"] = event.owner.contact_info
+    else:
+        data["owner_username"] = None
+        data["owner_contact_info"] = None
+
     return data
 
 
 def event_visible_to_user(event: Event, current_user: User | None) -> bool:
-    """
-    Public users can see only live approved events.
-    Owners can still see their own hidden/pending events when authenticated.
-    """
     is_public = event.is_live and event.approval_status == "approved"
     is_owner = current_user is not None and event.owner_id == current_user.id
     return is_public or is_owner
@@ -217,23 +179,48 @@ def list_events(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
-    """
-    Backward-compatible list endpoint used by existing screens.
-
-    Notes:
-    - guests can browse public events without login
-    - authenticated owners still see their own non-live events
-    - returns a plain list to avoid breaking current frontend
-    """
-    events = db.query(Event).options(
-        joinedload(Event.comments),
-        joinedload(Event.ratings),
-        joinedload(Event.owner),
-    ).all()
-
     query_lower = (query or "").strip().lower()
     category_lower = (category or "").strip().lower()
     location_lower = (location_name or "").strip().lower()
+
+    query_builder = db.query(Event).options(
+        joinedload(Event.owner)
+    )
+
+    if current_user is None or not include_non_live:
+        query_builder = query_builder.filter(
+            Event.is_live.is_(True),
+            Event.approval_status == "approved",
+        )
+
+    if ticketed_only:
+        query_builder = query_builder.filter(Event.has_ticket_sales.is_(True))
+
+    if category_lower:
+        query_builder = query_builder.filter(func.lower(Event.category) == category_lower)
+
+    if location_lower:
+        query_builder = query_builder.filter(
+            func.lower(Event.location_name).contains(location_lower)
+        )
+
+    if query_lower:
+        like_value = f"%{query_lower}%"
+        query_builder = query_builder.filter(
+            or_(
+                func.lower(Event.title).like(like_value),
+                func.lower(Event.description).like(like_value),
+                func.lower(Event.category).like(like_value),
+                func.lower(Event.location_name).like(like_value),
+            )
+        )
+
+    events = (
+        query_builder
+        .order_by(Event.event_date.asc().nullslast(), Event.created_at.desc())
+        .limit(limit)
+        .all()
+    )
 
     results = []
 
@@ -247,28 +234,6 @@ def list_events(
         if not include_non_live and not event.is_live and not is_owner:
             continue
 
-        if ticketed_only and not getattr(event, "has_ticket_sales", False):
-            continue
-
-        if category_lower and (event.category or "").strip().lower() != category_lower:
-            continue
-
-        if location_lower and location_lower not in (event.location_name or "").strip().lower():
-            continue
-
-        if query_lower:
-            haystack = " ".join([
-                event.title or "",
-                event.description or "",
-                event.category or "",
-                event.location_name or "",
-            ]).lower()
-
-            if query_lower not in haystack and not all(token in haystack for token in query_lower.split()):
-                continue
-
-            event.search_hit_count = (event.search_hit_count or 0) + 1
-
         score, distance = ranking_score(
             event,
             query,
@@ -278,15 +243,11 @@ def list_events(
 
         payload = serialize_event_response(event)
         payload.update({
-            "owner_username": event.owner.username if event.owner else None,
-            "owner_contact_info": event.owner.contact_info if event.owner else None,
             "average_rating": average_rating(event),
             "ranking_score": score,
             "distance_km": distance,
         })
         results.append(payload)
-
-    db.commit()
 
     results.sort(key=lambda item: item["title"].lower() if item.get("title") else "")
     return results[:limit]
@@ -303,12 +264,8 @@ def discover_events(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
-    """
-    Optimized paginated discovery endpoint.
+    start = time.time()
 
-    Public users see only live approved events.
-    This endpoint is public-focused and optimized for event card rendering.
-    """
     cache_key = (
         f"events:discover:"
         f"page={page}:"
@@ -321,6 +278,7 @@ def discover_events(
 
     cached = cache_get(cache_key)
     if cached is not None:
+        print("discover_events cache hit time:", time.time() - start)
         return cached
 
     query_lower = (query or "").strip().lower()
@@ -335,11 +293,6 @@ def discover_events(
             Event.poster_url,
             Event.poster_thumb_url,
             Event.poster_type,
-            Event.poster_width,
-            Event.poster_height,
-            Event.poster_bytes,
-            Event.featured_promo_image_url,
-            Event.featured_promo_click_url,
             Event.location_name,
             Event.category,
             Event.event_date,
@@ -351,7 +304,6 @@ def discover_events(
             Event.is_live,
             Event.share_slug,
             Event.share_click_count,
-            Event.search_hit_count,
             Event.owner_id,
             Event.created_at,
         ),
@@ -388,6 +340,8 @@ def discover_events(
         )
 
     total = query_builder.count()
+    print("discover_events count time:", time.time() - start)
+
     total_pages = max(1, ceil(total / page_size))
 
     selected = (
@@ -397,14 +351,11 @@ def discover_events(
         .limit(page_size)
         .all()
     )
+    print("discover_events fetch time:", time.time() - start)
 
     items = []
     for event in selected:
         payload = serialize_event_response(event)
-        payload.update({
-            "owner_username": event.owner.username if event.owner else None,
-            "owner_contact_info": event.owner.contact_info if event.owner else None,
-        })
         items.append(payload)
 
     response_payload = {
@@ -415,7 +366,8 @@ def discover_events(
         "total_pages": total_pages,
     }
 
-    cache_set(cache_key, response_payload, ttl=180)
+    cache_set(cache_key, response_payload, ttl=600)
+    print("discover_events total time:", time.time() - start)
     return response_payload
 
 
@@ -426,9 +378,6 @@ def track_event_share_click(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """
-    Record a share click for analytics / viral loop measurement.
-    """
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -467,12 +416,6 @@ def get_event(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
-    """
-    Public detail endpoint with optional owner personalization.
-
-    Guests can view live approved events.
-    Owners can still view their own non-live events.
-    """
     event = db.query(Event).options(
         joinedload(Event.comments),
         joinedload(Event.ratings),
@@ -508,16 +451,10 @@ def get_event(
 def create_event(
     title: str = Form(...),
     description: str = Form(...),
-
-    # Poster inputs
     poster_url: str | None = Form(default=None),
     poster_file: UploadFile | None = File(default=None),
-
-    # Featured promo inputs
     featured_promo_image_url: str | None = Form(default=None),
     featured_promo_click_url: str | None = Form(default=None),
-
-    # Event details
     google_map_link: str | None = Form(default=None),
     location_name: str | None = Form(default=None),
     category: str | None = Form(default=None),
@@ -525,25 +462,13 @@ def create_event(
     price: float | None = Form(default=None),
     payment_method: str | None = Form(default=None),
     has_ticket_sales: bool = Form(default=False),
-
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Create an event.
-
-    Supports either:
-    - external poster_url
-    - uploaded poster_file that gets optimized and uploaded to Cloudinary
-
-    Also supports optional featured promo fields.
-    """
-    # Validate optional external URLs.
     validate_external_url(poster_url, "poster_url")
     validate_external_url(featured_promo_image_url, "featured_promo_image_url")
     validate_external_url(featured_promo_click_url, "featured_promo_click_url")
 
-    # Default poster-related values.
     resolved_poster_url = poster_url
     resolved_poster_thumb_url = None
     resolved_poster_storage_key = None
@@ -552,8 +477,6 @@ def create_event(
     resolved_poster_height = None
     resolved_poster_bytes = None
 
-    # If a file is uploaded, process + compress + upload it.
-    # Uploaded file takes precedence over poster_url.
     if poster_file is not None:
         uploaded_poster = upload_processed_poster(poster_file)
         resolved_poster_url = uploaded_poster["poster_url"]
@@ -564,7 +487,6 @@ def create_event(
         resolved_poster_height = uploaded_poster["poster_height"]
         resolved_poster_bytes = uploaded_poster["poster_bytes"]
 
-    # Validate ticketed event creation against KYC approval.
     if has_ticket_sales and not user_has_approved_kyc(db, current_user.id):
         raise HTTPException(
             status_code=400,
@@ -574,7 +496,6 @@ def create_event(
             ),
         )
 
-    # Ticketed events go through review before going live.
     approval_status = "approved"
     is_live = True
 
@@ -585,8 +506,6 @@ def create_event(
     event = Event(
         title=title,
         description=description,
-
-        # Poster fields
         poster_url=resolved_poster_url,
         poster_thumb_url=resolved_poster_thumb_url,
         poster_storage_key=resolved_poster_storage_key,
@@ -594,12 +513,8 @@ def create_event(
         poster_width=resolved_poster_width,
         poster_height=resolved_poster_height,
         poster_bytes=resolved_poster_bytes,
-
-        # Featured promo fields
         featured_promo_image_url=featured_promo_image_url,
         featured_promo_click_url=featured_promo_click_url,
-
-        # Event metadata
         google_map_link=google_map_link,
         location_name=location_name,
         category=category,
@@ -620,13 +535,11 @@ def create_event(
     db.commit()
     db.refresh(event)
 
-    # Share slug is generated after ID exists.
     ensure_share_slug(event)
     db.add(event)
     db.commit()
     db.refresh(event)
 
-    # Bust discovery cache so newly created event can appear immediately.
     cache_delete_prefix("events:discover:")
 
     return EventResponse(**serialize_event_response(event))
@@ -639,14 +552,6 @@ def update_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Update an existing event owned by the current user.
-
-    Note:
-    - payment_link is protected and not directly editable here
-    - if poster_url is updated directly, poster_type is recalculated
-    - if ticket sales are turned on, event goes back to pending review
-    """
     event = db.query(Event).filter(
         Event.id == event_id,
         Event.owner_id == current_user.id,
@@ -656,11 +561,8 @@ def update_event(
         raise HTTPException(status_code=404, detail="Event not found or access denied")
 
     update_data = payload.model_dump(exclude_unset=True)
-
-    # Prevent direct manual edits to payment_link in this route.
     update_data.pop("payment_link", None)
 
-    # Validate direct URL updates if present.
     if "poster_url" in update_data:
         validate_external_url(update_data["poster_url"], "poster_url")
         update_data["poster_type"] = infer_poster_type_from_url(update_data["poster_url"])
@@ -671,8 +573,6 @@ def update_event(
     if "featured_promo_click_url" in update_data:
         validate_external_url(update_data["featured_promo_click_url"], "featured_promo_click_url")
 
-    # If ticket sales are being turned on for a previously non-ticketed event,
-    # re-run KYC gate and move the event back into review.
     if "has_ticket_sales" in update_data:
         turning_on_ticket_sales = bool(update_data["has_ticket_sales"]) and not event.has_ticket_sales
 
@@ -689,7 +589,6 @@ def update_event(
             update_data["approved_by_user_id"] = None
             update_data["rejection_reason"] = None
 
-        # If ticket sales are being turned off, clear ticketing details.
         if update_data["has_ticket_sales"] is False:
             update_data["price"] = None
             update_data["payment_method"] = None
@@ -714,9 +613,6 @@ def delete_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Delete an event owned by the current user.
-    """
     event = db.query(Event).filter(
         Event.id == event_id,
         Event.owner_id == current_user.id,
@@ -740,9 +636,6 @@ async def add_comment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Add a comment to an event.
-    """
     event = db.query(Event).filter(Event.id == event_id).first()
 
     if not event:
@@ -783,9 +676,6 @@ async def add_rating(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Add or update a rating on an event.
-    """
     if payload.value not in [1, 2, 3, 4, 5]:
         raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
 
@@ -818,7 +708,6 @@ async def add_rating(
         db.commit()
         db.refresh(rating)
 
-    # Create influencer star credits for stronger ratings.
     if payload.value in [3, 4, 5]:
         star = InfluencerStar(
             user_id=event.owner_id,

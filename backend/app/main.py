@@ -36,6 +36,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
+        "https://your-vercel-app.vercel.app"
         "http://127.0.0.1:5173",
         "https://dundaa-events-frontend.onrender.com",
         "https://dundaaevents.com",
