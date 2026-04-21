@@ -155,22 +155,17 @@ export default function EventsPage() {
   return (
     <div className="container grid" style={{ gap: 28 }}>
       <section className="page-header-bar">
-  <div>
-    <h1 style={{ margin: 0 }}>Uko na Form???</h1>
-
-    {user ? (
-      <Link to="/dashboard" className="btn promo-cta" style={{ marginTop: 12 }}>
-        Tupeleke na mutaratara
-      </Link>
-    ) : (
-      <Link to="/signup" className="btn promo-cta" style={{ marginTop: 12 }}>
-        Tupeleke na mutaratara
-      </Link>
-    )}
+  <div className="page-header-copy">
+    <h1>Uko na Form???</h1>
+    <p>Publish your event, fundraiser, or community moment with confidence.</p>
   </div>
 
-  {user && (
-    <Link to="/dashboard" className="btn">
+  {!user ? (
+    <Link to="/signup" className="btn promo-cta">
+      Tupeleke na mutaratara
+    </Link>
+  ) : (
+    <Link to="/dashboard" className="btn promo-cta">
       Post an event
     </Link>
   )}
