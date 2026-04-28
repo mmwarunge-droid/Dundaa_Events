@@ -1,10 +1,10 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import api from "../api/client";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(localStorage.getItem("dundaa_token"));
+  const [token, setToken] = useState(() => localStorage.getItem("dundaa_token"));
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [welcomeMessage, setWelcomeMessage] = useState("");
@@ -18,15 +18,37 @@ export function AuthProvider({ children }) {
   };
 
   const refreshProfile = async () => {
+    if (!localStorage.getItem("dundaa_token")) return null;
+
     const res = await api.get("/profile");
     setUser(res.data);
     return res.data;
   };
 
-  const login = (newToken, message = "") => {
+  const login = async (newToken, message = "") => {
     localStorage.setItem("dundaa_token", newToken);
     setToken(newToken);
     setWelcomeMessage(message || "");
+    setAuthLoading(true);
+
+    try {
+      const res = await api.get("/profile", {
+        headers: {
+          Authorization: `Bearer ${newToken}`
+        }
+      });
+
+      setUser(res.data);
+      return res.data;
+    } catch (err) {
+      console.error("Login profile preload failed:", err);
+      localStorage.removeItem("dundaa_token");
+      setToken(null);
+      setUser(null);
+      throw err;
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   const clearWelcomeMessage = () => {
@@ -34,17 +56,12 @@ export function AuthProvider({ children }) {
   };
 
   const submitNotificationConsent = async (value) => {
-    try {
-      const res = await api.put("/profile/notification-consent", {
-        notification_consent: value
-      });
+    const res = await api.put("/profile/notification-consent", {
+      notification_consent: value
+    });
 
-      setUser(res.data);
-      return res.data;
-    } catch (err) {
-      console.error("Failed to save notification consent:", err);
-      throw err;
-    }
+    setUser(res.data);
+    return res.data;
   };
 
   useEffect(() => {
@@ -63,22 +80,31 @@ export function AuthProvider({ children }) {
     let cancelled = false;
 
     const bootstrapAuth = async () => {
-      if (!token) {
+      const storedToken = localStorage.getItem("dundaa_token");
+
+      if (!storedToken) {
         if (!cancelled) {
+          setToken(null);
           setUser(null);
           setAuthLoading(false);
         }
         return;
       }
 
+      if (user && token === storedToken) {
+        setAuthLoading(false);
+        return;
+      }
+
       try {
-        if (!cancelled) {
-          setAuthLoading(true);
-        }
+        setAuthLoading(true);
+        setToken(storedToken);
 
-        localStorage.setItem("dundaa_token", token);
-
-        const res = await api.get("/profile");
+        const res = await api.get("/profile", {
+          headers: {
+            Authorization: `Bearer ${storedToken}`
+          }
+        });
 
         if (!cancelled) {
           setUser(res.data);
@@ -104,26 +130,26 @@ export function AuthProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, []);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        token,
-        user,
-        setUser,
-        authLoading,
-        login,
-        logout,
-        refreshProfile,
-        welcomeMessage,
-        clearWelcomeMessage,
-        submitNotificationConsent
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({
+      token,
+      user,
+      setUser,
+      authLoading,
+      isAuthenticated: Boolean(token && user),
+      login,
+      logout,
+      refreshProfile,
+      welcomeMessage,
+      clearWelcomeMessage,
+      submitNotificationConsent
+    }),
+    [token, user, authLoading, welcomeMessage]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

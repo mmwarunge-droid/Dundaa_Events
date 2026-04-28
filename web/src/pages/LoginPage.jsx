@@ -27,8 +27,8 @@ export default function LoginPage() {
         password
       });
 
-      login(res.data.access_token, "Welcome back to Dundaa");
-      navigate(from, { replace: true });
+      await login(res.data.access_token, "Welcome back to Dundaa");
+navigate(from, { replace: true });
     } catch (err) {
       console.error("Login failed:", err);
       setError(
