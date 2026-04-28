@@ -50,7 +50,8 @@ const EMPTY_FORM = {
   accepted_terms: false,
   accepted_anti_fraud: false,
   accepted_aml: false,
-  accepted_refund_policy: false
+  accepted_refund_policy: false,
+  kyc_submission_id: ""
 };
 
 export default function KycWizard({ onStatusChange }) {
