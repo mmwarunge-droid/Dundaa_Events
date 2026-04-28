@@ -44,9 +44,11 @@ class Event(Base):
     featured_promo_click_url = Column(String, nullable=True)
 
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    kyc_submission_id = Column(Integer, ForeignKey("kyc_submissions.id"), nullable=True, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    kyc_submission = relationship("KYCSubmission", foreign_keys=[kyc_submission_id])
     owner = relationship("User", back_populates="events", foreign_keys=[owner_id])
     approved_by = relationship("User", foreign_keys=[approved_by_user_id])
 

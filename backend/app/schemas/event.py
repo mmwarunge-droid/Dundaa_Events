@@ -59,6 +59,8 @@ class EventCreate(BaseModel):
     payment_method: PaymentMethod | None = None
     has_ticket_sales: bool = False
 
+    kyc_submission_id: int | None = None
+
 
 class EventUpdate(BaseModel):
     """
@@ -83,7 +85,7 @@ class EventUpdate(BaseModel):
     price: float | None = Field(default=None, ge=0)
     payment_method: PaymentMethod | None = None
     has_ticket_sales: bool | None = None
-
+    kyc_submission_id: int | None = None
 
 class AdminEventApproveRequest(BaseModel):
     """
@@ -101,6 +103,8 @@ class EventResponse(BaseModel):
     id: int
     title: str
     description: str
+
+    kyc_submission_id: int | None = None
 
     # Poster fields
     poster_url: str | None = None

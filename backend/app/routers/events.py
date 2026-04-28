@@ -464,6 +464,7 @@ def create_event(
     has_ticket_sales: bool = Form(default=False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    kyc_submission_id: int | None = Form(default=None),
 ):
     validate_external_url(poster_url, "poster_url")
     validate_external_url(featured_promo_image_url, "featured_promo_image_url")
@@ -487,13 +488,25 @@ def create_event(
         resolved_poster_height = uploaded_poster["poster_height"]
         resolved_poster_bytes = uploaded_poster["poster_bytes"]
 
-    if has_ticket_sales and not user_has_approved_kyc(db, current_user.id):
+    selected_kyc = None
+
+    if has_ticket_sales:
+        if not kyc_submission_id:
+            raise HTTPException(
+            status_code=400,
+            detail="Select an approved KYC organisation before enabling ticket sales.",
+        )
+
+    selected_kyc = db.query(KYCSubmission).filter(
+        KYCSubmission.id == kyc_submission_id,
+        KYCSubmission.user_id == current_user.id,
+        KYCSubmission.status == "approved",
+    ).first()
+
+    if not selected_kyc:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "KYC approval is required before publishing an event with ticket sales. "
-                "Please complete your KYC submission first."
-            ),
+            detail="Selected KYC organisation is not approved or does not belong to your account.",
         )
 
     approval_status = "approved"
@@ -529,6 +542,7 @@ def create_event(
         share_slug=None,
         share_click_count=0,
         search_hit_count=0,
+        kyc_submission_id=selected_kyc.id if selected_kyc else None,
     )
 
     db.add(event)

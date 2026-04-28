@@ -71,6 +71,9 @@ export default function KycWizard({ onStatusChange }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  const approvedKycSubmissions = kycSubmissions.filter(
+  (item) => item.status === "approved"
+);
   const loadDraftState = async () => {
     try {
       setLoading(true);

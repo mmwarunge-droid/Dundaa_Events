@@ -66,18 +66,19 @@ export default function InfluencerDashboardPage() {
   });
 
   const [form, setForm] = useState({
-    title: "",
-    description: "",
-    poster_url: "",
-    poster_file: null,
-    google_map_link: "",
-    location_name: "",
-    category: "",
-    event_date: "",
-    price: "",
-    payment_method: "",
-    has_ticket_sales: false
-  });
+  title: "",
+  description: "",
+  poster_url: "",
+  poster_file: null,
+  google_map_link: "",
+  location_name: "",
+  category: "",
+  event_date: "",
+  price: "",
+  payment_method: "",
+  has_ticket_sales: false,
+  kyc_submission_id: ""
+});
 
   const [editForm, setEditForm] = useState({
     title: "",
@@ -100,19 +101,26 @@ export default function InfluencerDashboardPage() {
     return `${API_BASE_URL}${url}`;
   };
 
-  const latestKyc = kycSubmissions?.[0] || null;
-  const hasApprovedKyc = latestKyc?.status === "approved";
-  const hasPendingKyc = latestKyc?.status === "pending";
-  const hasRejectedKyc = latestKyc?.status === "rejected";
-  const hasDraftKyc = latestKyc?.status === "draft";
+  const approvedKycSubmissions = useMemo(
+  () => (kycSubmissions || []).filter((item) => item.status === "approved"),
+  [kycSubmissions]
+);
 
-  const kycDisplayStatus = hasApprovedKyc
-    ? "Success"
-    : hasPendingKyc
-    ? "Submitted for Review"
-    : hasDraftKyc
-    ? "In Progress"
-    : "In Progress";
+const pendingKycSubmissions = useMemo(
+  () => (kycSubmissions || []).filter((item) => item.status === "pending"),
+  [kycSubmissions]
+);
+
+const draftKycSubmissions = useMemo(
+  () => (kycSubmissions || []).filter((item) => item.status === "draft"),
+  [kycSubmissions]
+);
+
+const latestKyc = kycSubmissions?.[0] || null;
+const hasApprovedKyc = approvedKycSubmissions.length > 0;
+const hasPendingKyc = pendingKycSubmissions.length > 0;
+const hasDraftKyc = draftKycSubmissions.length > 0;
+const hasRejectedKyc = latestKyc?.status === "rejected";
 
   const load = async () => {
     try {
@@ -172,72 +180,82 @@ export default function InfluencerDashboardPage() {
   };
 
   const handleCreate = async (e) => {
-    e.preventDefault();
-    setError("");
-    setPublishing(true);
+  e.preventDefault();
+  setError("");
+  setPublishing(true);
 
-    try {
-      if (form.has_ticket_sales && !hasApprovedKyc) {
-        const statusMessage = hasPendingKyc
-          ? "Your KYC has been submitted for review. You can publish ticket sales after admin approval."
-          : "KYC is still in progress. Complete and submit it before publishing ticket sales.";
+  try {
+    if (form.has_ticket_sales && !hasApprovedKyc) {
+      const statusMessage = hasPendingKyc
+        ? "Your KYC has been submitted for review. You can publish ticket sales after admin approval."
+        : "KYC is still in progress. Complete and submit it before publishing ticket sales.";
 
-        throw new Error(statusMessage);
-      }
-
-      const formData = new FormData();
-      formData.append("title", form.title);
-      formData.append("description", form.description);
-      formData.append("has_ticket_sales", String(form.has_ticket_sales));
-
-      if (form.poster_url.trim()) formData.append("poster_url", form.poster_url.trim());
-      if (form.poster_file) formData.append("poster_file", form.poster_file);
-      if (form.google_map_link.trim()) formData.append("google_map_link", form.google_map_link.trim());
-      if (form.location_name.trim()) formData.append("location_name", form.location_name.trim());
-      if (form.category) formData.append("category", form.category);
-      if (form.event_date) formData.append("event_date", form.event_date);
-      if (form.price !== "") formData.append("price", String(Number(form.price)));
-      if (form.payment_method) formData.append("payment_method", form.payment_method);
-
-      await api.post("/events", formData, {
-        headers: { "Content-Type": "multipart/form-data" }
-      });
-
-      setForm({
-        title: "",
-        description: "",
-        poster_url: "",
-        poster_file: null,
-        google_map_link: "",
-        location_name: "",
-        category: "",
-        event_date: "",
-        price: "",
-        payment_method: "",
-        has_ticket_sales: false
-      });
-
-      if (fileInputRef.current) fileInputRef.current.value = "";
-
-      await load();
-
-      if (form.has_ticket_sales) {
-        toast.success("Event submitted successfully for review.");
-      } else {
-        toast.success("Event published successfully.");
-      }
-    } catch (err) {
-      console.error("Failed to publish event:", err);
-      const msg =
-        err?.response?.data?.detail ||
-        err?.message ||
-        "Failed to publish event.";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setPublishing(false);
+      throw new Error(statusMessage);
     }
-  };
+
+    if (form.has_ticket_sales && !form.kyc_submission_id) {
+      throw new Error("Select the approved organisation/KYC profile to use for this ticketed event.");
+    }
+
+    const formData = new FormData();
+
+formData.append("title", form.title);
+formData.append("description", form.description);
+formData.append("has_ticket_sales", String(form.has_ticket_sales));
+
+if (form.has_ticket_sales) {
+  formData.append("kyc_submission_id", form.kyc_submission_id);
+}
+
+    if (form.poster_url.trim()) formData.append("poster_url", form.poster_url.trim());
+    if (form.poster_file) formData.append("poster_file", form.poster_file);
+    if (form.google_map_link.trim()) formData.append("google_map_link", form.google_map_link.trim());
+    if (form.location_name.trim()) formData.append("location_name", form.location_name.trim());
+    if (form.category) formData.append("category", form.category);
+    if (form.event_date) formData.append("event_date", form.event_date);
+    if (form.price !== "") formData.append("price", String(Number(form.price)));
+    if (form.payment_method) formData.append("payment_method", form.payment_method);
+
+    await api.post("/events", formData, {
+      headers: { "Content-Type": "multipart/form-data" }
+    });
+
+    setForm({
+      title: "",
+      description: "",
+      poster_url: "",
+      poster_file: null,
+      google_map_link: "",
+      location_name: "",
+      category: "",
+      event_date: "",
+      price: "",
+      payment_method: "",
+      has_ticket_sales: false,
+      kyc_submission_id: ""
+    });
+
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    await load();
+
+    toast.success(
+      form.has_ticket_sales
+        ? "Event submitted successfully for review."
+        : "Event published successfully."
+    );
+  } catch (err) {
+    console.error("Failed to publish event:", err);
+    const msg =
+      err?.response?.data?.detail ||
+      err?.message ||
+      "Failed to publish event.";
+    setError(msg);
+    toast.error(msg);
+  } finally {
+    setPublishing(false);
+  }
+};
 
   const handleDecay = async () => {
     try {
@@ -667,6 +685,26 @@ export default function InfluencerDashboardPage() {
                 </option>
               ))}
             </select>
+            {form.has_ticket_sales && (
+  <select
+    className="select"
+    value={form.kyc_submission_id}
+    onChange={(e) =>
+      setForm({ ...form, kyc_submission_id: e.target.value })
+    }
+  >
+    <option value="">Select approved organisation</option>
+
+    {approvedKycSubmissions.map((kyc) => (
+      <option key={kyc.id} value={kyc.id}>
+        {kyc.business_name ||
+          kyc.trading_name ||
+          kyc.business_registration_number ||
+          `Approved KYC #${kyc.id}`}
+      </option>
+    ))}
+  </select>
+)}
 
             <button className="btn" type="submit" disabled={publishing} style={{ gridColumn: "1 / -1" }}>
               {publishing ? "Publishing..." : "Publish Event"}
@@ -746,7 +784,7 @@ export default function InfluencerDashboardPage() {
         title="KYC"
         subtitle="Complete your KYC profile to unlock ticket sales and withdrawals."
       >
-        <KycWizard onComplete={load} />
+        <KycWizard onStatusChange={load} />
       </PageSection>
 
       <PageSection
